@@ -13,14 +13,15 @@ import org.apache.lucene.document.KnnFloatVectorField;
 import org.apache.lucene.index.VectorSimilarityFunction;
 import org.apache.lucene.util.BytesRef;
 import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfFloatsSerializer;
+import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
 import org.opensearch.knn.index.codec.util.KNNVectorSerializer;
 import org.opensearch.knn.index.memory.NativeMemoryAllocation;
 import org.opensearch.knn.jni.JNICommons;
 import org.opensearch.knn.training.BinaryTrainingDataConsumer;
 import org.opensearch.knn.training.ByteTrainingDataConsumer;
 import org.opensearch.knn.training.FloatTrainingDataConsumer;
+import org.opensearch.knn.training.HalfFloatTrainingDataConsumer;
 import org.opensearch.knn.training.TrainingDataConsumer;
-
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Objects;
@@ -75,6 +76,33 @@ public enum VectorDataType {
         @Override
         public TrainingDataConsumer getTrainingDataConsumer(NativeMemoryAllocation.TrainingDataAllocation trainingDataAllocation) {
             return new ByteTrainingDataConsumer(trainingDataAllocation);
+        }
+
+        @Override
+        public void freeNativeMemory(long memoryAddress) {
+            JNICommons.freeByteVectorData(memoryAddress);
+        }
+    },
+    HALF_FLOAT("half_float") {
+        @Override
+        public FieldType createKnnVectorFieldType(int dimension, KNNVectorSimilarityFunction knnVectorSimilarityFunction) {
+            FieldType fieldType = new FieldType();
+            fieldType.setDimensions(dimension, 2); // 2 bytes per dimension for float16
+            fieldType.setStored(false); // or true if needed
+            fieldType.setTokenized(false);
+            fieldType.freeze();
+            return fieldType;
+        }
+
+        @Override
+        public float[] getVectorFromBytesRef(BytesRef binaryValue) {
+            final KNNVectorSerializer vectorSerializer = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;
+            return vectorSerializer.byteToFloatArray(binaryValue);
+        }
+
+        @Override
+        public TrainingDataConsumer getTrainingDataConsumer(NativeMemoryAllocation.TrainingDataAllocation trainingDataAllocation) {
+            return new HalfFloatTrainingDataConsumer(trainingDataAllocation);
         }
 
         @Override
