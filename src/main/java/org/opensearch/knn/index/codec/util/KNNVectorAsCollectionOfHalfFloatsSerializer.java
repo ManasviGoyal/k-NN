@@ -23,6 +23,7 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer implements KNNVectorSer
 
     /**
      * Converts a float array to a byte array using half-precision encoding.
+     *
      * @param input the float[] to be serialized into half-precision format
      * @return a byte[] containing the float16-encoded data
      */
@@ -39,7 +40,8 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer implements KNNVectorSer
 
     /**
      * Converts a BytesRef-wrapped byte array (encoded as float16) back into a float array.
-     * @param bytesRef the BytesRef containing float16-encoded vector data
+     *
+     *  @param bytesRef the BytesRef containing float16-encoded vector data
      * @return a float containing the decoded float32 values
      */
     @Override
