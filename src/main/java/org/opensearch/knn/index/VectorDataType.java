@@ -21,6 +21,7 @@ import org.opensearch.knn.training.BinaryTrainingDataConsumer;
 import org.opensearch.knn.training.ByteTrainingDataConsumer;
 import org.opensearch.knn.training.FloatTrainingDataConsumer;
 import org.opensearch.knn.training.TrainingDataConsumer;
+
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Objects;
@@ -86,12 +87,10 @@ public enum VectorDataType {
 
         @Override
         public FieldType createKnnVectorFieldType(int dimension, KNNVectorSimilarityFunction knnVectorSimilarityFunction) {
-            FieldType fieldType = new FieldType();
-            fieldType.setDimensions(dimension, 2); // 2 bytes per dimension for float16
-            fieldType.setStored(false); // or true if needed
-            fieldType.setTokenized(false);
-            fieldType.freeze();
-            return fieldType;
+            FieldType type = new FieldType();
+            type.setDimensions(dimension, 2);
+            type.freeze();
+            return type;
         }
 
         @Override
