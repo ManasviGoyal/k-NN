@@ -20,7 +20,6 @@ import org.opensearch.knn.jni.JNICommons;
 import org.opensearch.knn.training.BinaryTrainingDataConsumer;
 import org.opensearch.knn.training.ByteTrainingDataConsumer;
 import org.opensearch.knn.training.FloatTrainingDataConsumer;
-import org.opensearch.knn.training.HalfFloatTrainingDataConsumer;
 import org.opensearch.knn.training.TrainingDataConsumer;
 import java.util.Arrays;
 import java.util.Locale;
@@ -84,6 +83,7 @@ public enum VectorDataType {
         }
     },
     HALF_FLOAT("half_float") {
+
         @Override
         public FieldType createKnnVectorFieldType(int dimension, KNNVectorSimilarityFunction knnVectorSimilarityFunction) {
             FieldType fieldType = new FieldType();
@@ -102,7 +102,7 @@ public enum VectorDataType {
 
         @Override
         public TrainingDataConsumer getTrainingDataConsumer(NativeMemoryAllocation.TrainingDataAllocation trainingDataAllocation) {
-            return new HalfFloatTrainingDataConsumer(trainingDataAllocation);
+            return new FloatTrainingDataConsumer(trainingDataAllocation); // FIXME: Need to adapt it for fp16
         }
 
         @Override
