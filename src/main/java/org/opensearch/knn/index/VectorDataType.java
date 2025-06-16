@@ -101,7 +101,7 @@ public enum VectorDataType {
 
         @Override
         public TrainingDataConsumer getTrainingDataConsumer(NativeMemoryAllocation.TrainingDataAllocation trainingDataAllocation) {
-            return new FloatTrainingDataConsumer(trainingDataAllocation); // FIXME: Need to adapt it for fp16
+            return new FloatTrainingDataConsumer(trainingDataAllocation); // FIXME: Need to adapt it for fp16 if needed
         }
 
         @Override
