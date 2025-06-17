@@ -50,8 +50,8 @@ public class KNNValidationUtil {
             throw new IllegalArgumentException(
                     String.format(
                             Locale.ROOT,
-                            "KNN vector value [%f] is not within the FP16 range [%f, %f].",
-                            value,
+                            "[%s] field was set as HALF_FLOAT in index mapping. But, KNN vector values are not within in the half float range [%f, %f]",
+                            VECTOR_DATA_TYPE_FIELD,
                             FP16_MIN_VALUE,
                             FP16_MAX_VALUE
                     )

@@ -47,8 +47,11 @@ public class FieldInfoExtractorTests extends KNNTestCase {
     public void testExtractVectorDataType() {
         FieldInfo fieldInfo = Mockito.mock(FieldInfo.class);
         when(fieldInfo.getAttribute("data_type")).thenReturn(VectorDataType.BINARY.getValue());
-
         assertEquals(VectorDataType.BINARY, FieldInfoExtractor.extractVectorDataType(fieldInfo));
+        when(fieldInfo.getAttribute("data_type")).thenReturn(null);
+
+        when(fieldInfo.getAttribute("data_type")).thenReturn(VectorDataType.HALF_FLOAT.getValue());
+        assertEquals(VectorDataType.HALF_FLOAT, FieldInfoExtractor.extractVectorDataType(fieldInfo));
         when(fieldInfo.getAttribute("data_type")).thenReturn(null);
 
         when(fieldInfo.getAttribute("model_id")).thenReturn(MODEL_ID);

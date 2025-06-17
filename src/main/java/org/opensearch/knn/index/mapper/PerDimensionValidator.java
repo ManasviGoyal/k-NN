@@ -9,6 +9,7 @@ import org.opensearch.knn.index.VectorDataType;
 
 import static org.opensearch.knn.common.KNNValidationUtil.validateByteVectorValue;
 import static org.opensearch.knn.common.KNNValidationUtil.validateFloatVectorValue;
+import static org.opensearch.knn.common.KNNValidationUtil.validateHalfFloatVectorValue;
 
 /**
  * Validates per dimension fields
@@ -37,6 +38,18 @@ public interface PerDimensionValidator {
         @Override
         public void validateByte(float value) {
             throw new IllegalStateException("DEFAULT_FLOAT_VALIDATOR should only be used for float vectors");
+        }
+    };
+
+    PerDimensionValidator DEFAULT_HALF_FLOAT_VALIDATOR = new PerDimensionValidator() {
+        @Override
+        public void validate(float value) {
+            validateHalfFloatVectorValue(value);
+        }
+
+        @Override
+        public void validateByte(float value) {
+            throw new IllegalStateException("DEFAULT_HALF_FLOAT_VALIDATOR should only be used for half float vectors");
         }
     };
 

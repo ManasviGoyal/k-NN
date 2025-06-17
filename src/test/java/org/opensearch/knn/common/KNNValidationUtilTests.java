@@ -56,8 +56,8 @@ public class KNNValidationUtilTests extends KNNTestCase {
                 IllegalArgumentException.class,
                 () -> KNNValidationUtil.validateHalfFloatVectorValue(65505.0f)
         );
-        assertThat(ex.getMessage(), containsString("is not within the FP16 range"));
-        assertThat(ex.getMessage(), containsString("65505"));
+        assertThat(ex.getMessage(), containsString("KNN vector values are not within in the half float range"));
+        assertThat(ex.getMessage(), containsString("65504"));
     }
 
     public void testValidateHalfFloatVectorValue_whenValueTooSmall_thenThrowException() {
@@ -65,8 +65,8 @@ public class KNNValidationUtilTests extends KNNTestCase {
                 IllegalArgumentException.class,
                 () -> KNNValidationUtil.validateHalfFloatVectorValue(-65505.0f)
         );
-        assertThat(ex.getMessage(), containsString("is not within the FP16 range"));
-        assertThat(ex.getMessage(), containsString("-65505"));
+        assertThat(ex.getMessage(), containsString("KNN vector values are not within in the half float range"));
+        assertThat(ex.getMessage(), containsString("-65504"));
     }
 
     public void testValidateHalfFloatVectorValue_whenNaN_thenThrowException() {
