@@ -17,6 +17,8 @@ import lombok.NoArgsConstructor;
 import org.opensearch.knn.index.VectorDataType;
 
 import static org.opensearch.knn.common.KNNConstants.VECTOR_DATA_TYPE_FIELD;
+import static org.opensearch.knn.common.KNNConstants.FP16_MAX_VALUE;
+import static org.opensearch.knn.common.KNNConstants.FP16_MIN_VALUE;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class KNNValidationUtil {
@@ -32,6 +34,28 @@ public class KNNValidationUtil {
 
         if (Float.isInfinite(value)) {
             throw new IllegalArgumentException("KNN vector values cannot be infinity");
+        }
+    }
+
+    /**
+     * Validate the half float vector value and throw exception if it is not a number, not in the finite range,
+     * or outside the representable range of half-precision floating point.
+     *
+     * @param value  float vector value to be stored as half float
+     */
+    public static void validateHalfFloatVectorValue(float value) {
+        validateFloatVectorValue(value); // Existing check for NaN and Infinity
+
+        if (value < FP16_MIN_VALUE || value > FP16_MAX_VALUE) {
+            throw new IllegalArgumentException(
+                    String.format(
+                            Locale.ROOT,
+                            "KNN vector value [%f] is not within the FP16 range [%f, %f].",
+                            value,
+                            FP16_MIN_VALUE,
+                            FP16_MAX_VALUE
+                    )
+            );
         }
     }
 
