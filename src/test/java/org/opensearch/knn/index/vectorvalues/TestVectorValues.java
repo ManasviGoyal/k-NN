@@ -9,6 +9,7 @@ import org.apache.lucene.index.*;
 import org.apache.lucene.search.VectorScorer;
 import org.apache.lucene.util.BytesRef;
 import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfFloatsSerializer;
+import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
 import org.opensearch.knn.index.codec.util.KNNVectorSerializer;
 
 import java.io.IOException;
@@ -390,6 +391,52 @@ public class TestVectorValues {
         @Override
         public long cost() {
             return 0;
+        }
+    }
+
+    public static class RandomHalfFloatVectorBinaryDocValues extends VectorDocValues {
+
+        public RandomHalfFloatVectorBinaryDocValues(int count, int dimension) {
+            super(count, dimension);
+            this.knnVectorSerializer = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;
+        }
+
+        @Override
+        public BytesRef binaryValue() throws IOException {
+            return new BytesRef(knnVectorSerializer.floatToByteArray(getRandomVector(dimension)));
+        }
+    }
+
+    public static class ConstantHalfFloatVectorBinaryDocValues extends VectorDocValues {
+
+        private final BytesRef value;
+
+        public ConstantHalfFloatVectorBinaryDocValues(int count, int dimension, float value) {
+            super(count, dimension);
+            float[] array = new float[dimension];
+            Arrays.fill(array, value);
+            this.knnVectorSerializer = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;
+            this.value = new BytesRef(knnVectorSerializer.floatToByteArray(array));
+        }
+
+        @Override
+        public BytesRef binaryValue() throws IOException {
+            return value;
+        }
+    }
+
+    public static class PredefinedHalfFloatVectorBinaryDocValues extends VectorDocValues {
+        private final List<float[]> vectors;
+
+        public PredefinedHalfFloatVectorBinaryDocValues(final List<float[]> vectors) {
+            super(vectors.size(), vectors.get(0).length);
+            this.vectors = vectors;
+            this.knnVectorSerializer = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;
+        }
+
+        @Override
+        public BytesRef binaryValue() throws IOException {
+            return new BytesRef(knnVectorSerializer.floatToByteArray(vectors.get(docID())));
         }
     }
 
