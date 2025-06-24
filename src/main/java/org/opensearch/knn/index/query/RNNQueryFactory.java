@@ -102,6 +102,7 @@ public class RNNQueryFactory extends BaseQueryFactory {
         switch (vectorDataType) {
             case BYTE:
                 return getByteVectorSimilarityQuery(fieldName, byteVector, radius, filterQuery);
+            case HALF_FLOAT:
             case FLOAT:
                 return getFloatVectorSimilarityQuery(fieldName, vector, radius, filterQuery);
             default:

@@ -15,7 +15,7 @@ import java.io.IOException;
 
 /**
  * An abstract class to iterate over KNNVectors, as KNNVectors are stored as different representation like
- * {@link BinaryDocValues}, {@link FloatVectorValues}, {@link ByteVectorValues}, {@link KnnFieldVectorsWriter} etc.
+ * {@link BinaryDocValues}, {@link FloatVectorValues}, {@link HalfloatVectorValues}, {@link ByteVectorValues}, {@link KnnFieldVectorsWriter} etc.
  * @param <T>
  */
 @ToString

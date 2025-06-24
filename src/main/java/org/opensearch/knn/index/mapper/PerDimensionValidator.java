@@ -44,7 +44,7 @@ public interface PerDimensionValidator {
     PerDimensionValidator DEFAULT_HALF_FLOAT_VALIDATOR = new PerDimensionValidator() {
         @Override
         public void validate(float value) {
-            validateHalfFloatVectorValue(value);
+            clipVectorValueToFP16Range(value)
         }
 
         @Override

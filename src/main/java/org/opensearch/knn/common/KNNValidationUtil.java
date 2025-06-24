@@ -60,6 +60,19 @@ public class KNNValidationUtil {
     }
 
     /**
+     * Clip the float vector value to the half float range.
+     *
+     * @param value  float vector value to be clipped
+     * @return clipped float vector value
+     */
+    public static float clipVectorValueToFP16Range(float value) {
+        validateFloatVectorValue(value);
+        if (value < FP16_MIN_VALUE) return FP16_MIN_VALUE;
+        if (value > FP16_MAX_VALUE) return FP16_MAX_VALUE;
+        return value;
+    }
+
+    /**
      * Validate the float vector value in the byte range if it is a finite number,
      * with no decimal values and in the byte range of [-128 to 127]. If not throw IllegalArgumentException.
      *

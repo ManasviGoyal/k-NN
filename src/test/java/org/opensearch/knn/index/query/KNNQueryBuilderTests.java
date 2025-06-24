@@ -659,6 +659,10 @@ public class KNNQueryBuilderTests extends KNNTestCase {
         do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(true, false, VectorDataType.FLOAT, false);
         do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(true, false, VectorDataType.BYTE, true);
         do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(true, false, VectorDataType.BYTE, false);
+        do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(true, true, VectorDataType.HALF_FLOAT, true);
+        do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(true, true, VectorDataType.HALF_FLOAT, false);
+        do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(true, false, VectorDataType.HALF_FLOAT, true);
+        do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(true, false, VectorDataType.HALF_FLOAT, false);
         do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(true, true, VectorDataType.BINARY, true);
         do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(true, true, VectorDataType.BINARY, false);
         do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(true, false, VectorDataType.BINARY, true);
@@ -672,6 +676,10 @@ public class KNNQueryBuilderTests extends KNNTestCase {
         do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(false, false, VectorDataType.FLOAT, false);
         do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(false, false, VectorDataType.BYTE, true);
         do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(false, false, VectorDataType.BYTE, false);
+        do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(false, true, VectorDataType.HALF_FLOAT, true);
+        do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(false, true, VectorDataType.HALF_FLOAT, false);
+        do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(false, false, VectorDataType.HALF_FLOAT, true);
+        do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(false, false, VectorDataType.HALF_FLOAT, false);
         do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(false, false, VectorDataType.BINARY, true);
         do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(false, false, VectorDataType.BINARY, false);
         do_testDoToQuery_whenMemoryOptimizedSearchIsEnabled(false, true, VectorDataType.BINARY, true);
@@ -740,6 +748,8 @@ public class KNNQueryBuilderTests extends KNNTestCase {
             final boolean memoryOptimizedEnabled = memoryOptimizedSearchEnabled && memoryOptimizedSearchSupportedInField;
             if (memoryOptimizedEnabled) {
                 if (vectorDataType == VectorDataType.FLOAT) {
+                    assertEquals(queryVector.length, knnQuery.getQueryVector().length);
+                } else if (vectorDataType == VectorDataType.HALF_FLOAT) {
                     assertEquals(queryVector.length, knnQuery.getQueryVector().length);
                 } else if (vectorDataType == VectorDataType.BYTE) {
                     assertEquals(queryVector.length, knnQuery.getByteQueryVector().length);

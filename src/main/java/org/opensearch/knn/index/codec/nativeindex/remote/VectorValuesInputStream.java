@@ -11,6 +11,7 @@ import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.vectorvalues.KNNBinaryVectorValues;
 import org.opensearch.knn.index.vectorvalues.KNNByteVectorValues;
 import org.opensearch.knn.index.vectorvalues.KNNFloatVectorValues;
+import org.opensearch.knn.index.vectorvalues.KNNHalfFloatVectorValues;
 import org.opensearch.knn.index.vectorvalues.KNNVectorValues;
 
 import java.io.IOException;
@@ -22,6 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.opensearch.knn.index.VectorDataType.BINARY;
 import static org.opensearch.knn.index.VectorDataType.BYTE;
 import static org.opensearch.knn.index.VectorDataType.FLOAT;
+import static org.opensearch.knn.index.VectorDataType.HALF_FLOAT;
 import static org.opensearch.knn.index.codec.util.KNNCodecUtil.initializeVectorValues;
 
 /**
@@ -201,6 +203,9 @@ class VectorValuesInputStream extends InputStream {
         if (vectorDataType == FLOAT) {
             float[] floatVector = ((KNNFloatVectorValues) knnVectorValues).getVector();
             currentBuffer.asFloatBuffer().put(floatVector);
+        } else if (vectorDataType == HALF_FLOAT) {
+            float[] halfFloatVector = ((KNNHalfFloatVectorValues) knnVectorValues).getVector();
+            currentBuffer.asFloatBuffer().put(halfFloatVector);
         } else if (vectorDataType == BYTE) {
             byte[] byteVector = ((KNNByteVectorValues) knnVectorValues).getVector();
             currentBuffer.put(byteVector);

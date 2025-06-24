@@ -95,6 +95,9 @@ public abstract class AbstractKNNMethod implements KNNMethod {
         if (VectorDataType.BYTE == vectorDataType) {
             return PerDimensionValidator.DEFAULT_BYTE_VALIDATOR;
         }
+        if (VectorDataType.HALF_FLOAT == vectorDataType) {
+            return PerDimensionValidator.DEFAULT_HALF_FLOAT_VALIDATOR;
+        }
         return PerDimensionValidator.DEFAULT_FLOAT_VALIDATOR;
     }
 

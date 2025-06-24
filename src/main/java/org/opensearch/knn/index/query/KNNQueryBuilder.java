@@ -484,6 +484,10 @@ public class KNNQueryBuilder extends AbstractQueryBuilder<KNNQueryBuilder> imple
                 throw new UnsupportedOperationException(String.format(Locale.ROOT, "Binary data type does not support radial search"));
             }
 
+            if (vectorDataType == VectorDataType.HALF_FLOAT) {
+                throw new UnsupportedOperationException(String.format(Locale.ROOT, "Half Float data type does not support radial search"));
+            }
+
             if (knnMappingConfig.getQuantizationConfig() != QuantizationConfig.EMPTY) {
                 throw new UnsupportedOperationException("Radial search is not supported for indices which have quantization enabled");
             }
@@ -587,7 +591,7 @@ public class KNNQueryBuilder extends AbstractQueryBuilder<KNNQueryBuilder> imple
                 .knnEngine(knnEngine)
                 .indexName(indexName)
                 .fieldName(this.fieldName)
-                .vector(VectorDataType.FLOAT == vectorDataType ? this.vector : null)
+                .vector((vectorDataType == VectorDataType.FLOAT || vectorDataType == VectorDataType.HALF_FLOAT) ? this.vector : null)
                 .byteVector(VectorDataType.BYTE == vectorDataType ? byteVector : null)
                 .vectorDataType(vectorDataType)
                 .radius(radius)
@@ -680,7 +684,7 @@ public class KNNQueryBuilder extends AbstractQueryBuilder<KNNQueryBuilder> imple
     }
 
     private float[] getVectorForCreatingQueryRequest(VectorDataType vectorDataType, KNNEngine knnEngine) {
-        if ((VectorDataType.FLOAT == vectorDataType) || (VectorDataType.BYTE == vectorDataType && KNNEngine.FAISS == knnEngine)) {
+        if ((vectorDataType == VectorDataType.FLOAT || vectorDataType == VectorDataType.HALF_FLOAT) || (VectorDataType.BYTE == vectorDataType && KNNEngine.FAISS == knnEngine)) {
             return this.vector;
         }
         return null;

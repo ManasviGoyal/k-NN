@@ -29,6 +29,9 @@ public class KNNVectorValuesFactoryTests extends KNNTestCase {
         final KNNVectorValues<float[]> floatVectorValues = KNNVectorValuesFactory.getVectorValues(VectorDataType.FLOAT, binaryDocValues);
         Assert.assertNotNull(floatVectorValues);
 
+        final KNNVectorValues<float[]> halfFloatVectorValues = KNNVectorValuesFactory.getVectorValues(VectorDataType.HALF_FLOAT, binaryDocValues);
+        Assert.assertNotNull(halfFloatVectorValues);
+
         final KNNVectorValues<byte[]> byteVectorValues = KNNVectorValuesFactory.getVectorValues(VectorDataType.BYTE, binaryDocValues);
         Assert.assertNotNull(byteVectorValues);
 
@@ -41,12 +44,20 @@ public class KNNVectorValuesFactoryTests extends KNNTestCase {
         docsWithFieldSet.add(0);
         docsWithFieldSet.add(1);
         final Map<Integer, float[]> floatVectorMap = Map.of(0, new float[] { 1, 2 }, 1, new float[] { 2, 3 });
+
         final KNNVectorValues<float[]> floatVectorValues = KNNVectorValuesFactory.getVectorValues(
             VectorDataType.FLOAT,
             docsWithFieldSet,
             floatVectorMap
         );
         Assert.assertNotNull(floatVectorValues);
+
+        final KNNVectorValues<float[]> halfFloatVectorValues = KNNVectorValuesFactory.getVectorValues(
+                VectorDataType.HALF_FLOAT,
+                docsWithFieldSet,
+                floatVectorMap
+        );
+        Assert.assertNotNull(halfFloatVectorValues);
 
         final Map<Integer, byte[]> byteVectorMap = Map.of(0, new byte[] { 4, 5 }, 1, new byte[] { 6, 7 });
 

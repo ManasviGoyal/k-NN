@@ -41,7 +41,7 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer implements KNNVectorSer
     /**
      * Converts a BytesRef-wrapped byte array (encoded as float16) back into a float array.
      *
-     *  @param bytesRef the BytesRef containing float16-encoded vector data
+     * @param bytesRef the BytesRef containing float16-encoded vector data
      * @return a float containing the decoded float32 values
      */
     @Override
@@ -51,7 +51,6 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer implements KNNVectorSer
         }
         final int sizeOfFloatArray = bytesRef.length / BYTES_IN_HALF_FLOAT;
         final float[] vector = new float[sizeOfFloatArray];
-
 
         ShortBuffer sb = ByteBuffer.wrap(bytesRef.bytes, bytesRef.offset, bytesRef.length)
                 .order(ByteOrder.BIG_ENDIAN)

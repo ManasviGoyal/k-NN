@@ -55,7 +55,6 @@ public class VectorDataTypeTests extends KNNTestCase {
         directory.close();
     }
 
-
     @SneakyThrows
     public void testGetDocValuesWithByteVectorDataType() {
         KNNVectorScriptDocValues<byte[]> scriptDocValues = getKNNByteVectorScriptDocValues();
