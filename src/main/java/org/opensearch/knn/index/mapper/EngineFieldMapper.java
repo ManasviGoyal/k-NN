@@ -40,6 +40,7 @@ import static org.opensearch.knn.common.KNNConstants.SPACE_TYPE;
 import static org.opensearch.knn.common.KNNConstants.VECTOR_DATA_TYPE_FIELD;
 import static org.opensearch.knn.index.mapper.KNNVectorFieldMapperUtil.buildDocValuesFieldType;
 import static org.opensearch.knn.index.mapper.KNNVectorFieldMapperUtil.createStoredFieldForByteVector;
+import static org.opensearch.knn.index.mapper.KNNVectorFieldMapperUtil.createStoredFieldForHalfFloatVector;
 import static org.opensearch.knn.index.mapper.KNNVectorFieldMapperUtil.createStoredFieldForFloatVector;
 
 /**
@@ -246,10 +247,18 @@ public class EngineFieldMapper extends KNNVectorFieldMapper {
             final List<Field> fields = new ArrayList<>();
             fields.add(new DerivedKnnFloatVectorField(name(), array, fieldType, isDerivedSourceEnabled));
             if (hasDocValues && vectorFieldType != null) {
-                fields.add(new VectorField(name(), array, vectorFieldType));
+                if (vectorDataType == VectorDataType.HALF_FLOAT) {
+                    fields.add(new VectorField(name(), array, vectorFieldType, VectorDataType.HALF_FLOAT));
+                } else {
+                    fields.add(new VectorField(name(), array, vectorFieldType, VectorDataType.FLOAT));
+                }
             }
             if (stored) {
-                fields.add(createStoredFieldForFloatVector(name(), array));
+                if (vectorDataType == VectorDataType.HALF_FLOAT) {
+                    fields.add(createStoredFieldForHalfFloatVector(name(), array));
+                } else {
+                    fields.add(createStoredFieldForFloatVector(name(), array));
+                }
             }
             return fields;
         }

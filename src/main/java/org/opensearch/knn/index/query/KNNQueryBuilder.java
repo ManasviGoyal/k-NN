@@ -483,6 +483,10 @@ public class KNNQueryBuilder extends AbstractQueryBuilder<KNNQueryBuilder> imple
                 throw new UnsupportedOperationException(String.format(Locale.ROOT, "Binary data type does not support radial search"));
             }
 
+            if (vectorDataType == VectorDataType.HALF_FLOAT) {
+                throw new UnsupportedOperationException(String.format(Locale.ROOT, "Half Float data type does not support radial search"));
+            }
+
             if (knnMappingConfig.getQuantizationConfig() != QuantizationConfig.EMPTY) {
                 throw new UnsupportedOperationException("Radial search is not supported for indices which have quantization enabled");
             }

@@ -14,6 +14,7 @@ import org.apache.lucene.util.ArrayUtil;
 import org.apache.lucene.util.BytesRef;
 import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfFloatsSerializer;
+import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
 import org.opensearch.knn.index.codec.util.KNNVectorSerializer;
 
 import java.io.IOException;
@@ -31,6 +32,16 @@ public interface VectorValueExtractorStrategy {
      */
     static float[] extractFloatVector(final KNNVectorValuesIterator iterator) throws IOException {
         return iterator.getVectorExtractorStrategy().extract(VectorDataType.FLOAT, iterator);
+    }
+
+    /**
+     * Extract a float vector from KNNVectorValuesIterator.
+     * @param iterator {@link KNNVectorValuesIterator}
+     * @return float[]
+     * @throws IOException exception while retrieving the vectors
+     */
+    static float[] extractHalfFloatVector(final KNNVectorValuesIterator iterator) throws IOException {
+        return iterator.getVectorExtractorStrategy().extract(VectorDataType.HALF_FLOAT, iterator);
     }
 
     /**
@@ -90,6 +101,8 @@ public interface VectorValueExtractorStrategy {
             BytesRef bytesRef = values.binaryValue();
             if (vectorDataType == VectorDataType.FLOAT) {
                 return (T) getFloatVectorFromByteRef(bytesRef);
+            } else if (vectorDataType == VectorDataType.HALF_FLOAT) {
+                return (T) getHalfFloatVectorFromByteRef(bytesRef);
             } else if (vectorDataType == VectorDataType.BYTE || vectorDataType == VectorDataType.BINARY) {
                 return (T) ArrayUtil.copyOfSubArray(bytesRef.bytes, bytesRef.offset, bytesRef.offset + bytesRef.length);
             }
@@ -122,6 +135,11 @@ public interface VectorValueExtractorStrategy {
 
         private float[] getFloatVectorFromByteRef(final BytesRef bytesRef) {
             final KNNVectorSerializer vectorSerializer = KNNVectorAsCollectionOfFloatsSerializer.INSTANCE;
+            return vectorSerializer.byteToFloatArray(bytesRef);
+        }
+
+        private float[] getHalfFloatVectorFromByteRef(final BytesRef bytesRef) {
+            final KNNVectorSerializer vectorSerializer = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;
             return vectorSerializer.byteToFloatArray(bytesRef);
         }
     }

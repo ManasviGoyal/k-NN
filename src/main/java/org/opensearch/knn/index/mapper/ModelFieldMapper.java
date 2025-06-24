@@ -300,6 +300,13 @@ public class ModelFieldMapper extends KNNVectorFieldMapper {
     protected void parseCreateField(ParseContext context) throws IOException {
         validatePreparse();
         ModelMetadata modelMetadata = getModelMetadata(modelDao, modelId);
+
+        // Skip unsupported HALF_FLOAT vector data type
+        // Currently, HALF_FLOAT is only supported for exact search, but ModelFieldMapper is used for ANN search,
+        if (modelMetadata.getVectorDataType() == VectorDataType.HALF_FLOAT) {
+            throw new IllegalStateException("Unsupported vector data type HALF_FLOAT");
+        }
+
         if (useLuceneBasedVectorField) {
             int adjustedDimension = modelMetadata.getVectorDataType() == VectorDataType.BINARY
                 ? modelMetadata.getDimension() / Byte.SIZE
