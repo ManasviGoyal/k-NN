@@ -57,6 +57,7 @@ import static org.opensearch.knn.common.KNNConstants.VECTOR_DATA_TYPE_FIELD;
 import static org.opensearch.knn.common.KNNValidationUtil.validateVectorDimension;
 import static org.opensearch.knn.index.mapper.KNNVectorFieldMapperUtil.createKNNMethodContextFromLegacy;
 import static org.opensearch.knn.index.mapper.KNNVectorFieldMapperUtil.createStoredFieldForByteVector;
+import static org.opensearch.knn.index.mapper.KNNVectorFieldMapperUtil.createStoredFieldForHalfFloatVector;
 import static org.opensearch.knn.index.mapper.KNNVectorFieldMapperUtil.createStoredFieldForFloatVector;
 import static org.opensearch.knn.index.mapper.KNNVectorFieldMapperUtil.useFullFieldNameValidation;
 import static org.opensearch.knn.index.mapper.KNNVectorFieldMapperUtil.validateIfCircuitBreakerIsNotTriggered;
@@ -673,7 +674,7 @@ public abstract class KNNVectorFieldMapper extends ParametrizedFieldMapper {
         if (useLuceneBasedVectorField) {
             return new DerivedKnnFloatVectorField(name(), vectorValue, fieldType, isDerivedEnabled);
         }
-        return new VectorField(name(), vectorValue, fieldType);
+        return new VectorField(name(), vectorValue, fieldType, vectorDataType);
     }
 
     private Field createVectorField(byte[] vectorValue, boolean isDerivedEnabled) {
@@ -693,7 +694,11 @@ public abstract class KNNVectorFieldMapper extends ParametrizedFieldMapper {
         final List<Field> fields = new ArrayList<>();
         fields.add(createVectorField(array, isDerivedEnabled));
         if (this.stored) {
-            fields.add(createStoredFieldForFloatVector(name(), array));
+            if (vectorDataType == VectorDataType.HALF_FLOAT) {
+                fields.add(createStoredFieldForHalfFloatVector(name(), array));
+            } else {
+                fields.add(createStoredFieldForFloatVector(name(), array));
+            }
         }
         return fields;
     }
@@ -770,7 +775,7 @@ public abstract class KNNVectorFieldMapper extends ParametrizedFieldMapper {
             getVectorValidator().validateVector(array);
             getVectorTransformer().transform(array);
             context.doc().addAll(getFieldsForByteVector(array, isDerivedEnabled(context)));
-        } else if (VectorDataType.FLOAT == vectorDataType) {
+        } else if (VectorDataType.FLOAT == vectorDataType  || VectorDataType.HALF_FLOAT == vectorDataType) {
             Optional<float[]> floatsArrayOptional = getFloatsFromContext(context, dimension);
 
             if (floatsArrayOptional.isEmpty()) {
