@@ -54,6 +54,19 @@ public class KNNVectorSerializerTests extends KNNTestCase {
         assertArrayEquals(vector, deserializedVector, 0.1f);
     }
 
+    public void testHalfFloatVectorSerializer_whenVectorBytesOffset_thenSuccess() {
+        final float[] vector = getArrayOfRandomFloats(20);
+        int offset = randomInt(4);
+        final KNNVectorSerializer vectorSerializer = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;
+        assertNotNull(vectorSerializer);
+        byte[] bytes = vectorSerializer.floatToByteArray(vector);
+        byte[] bytesWithOffset = new byte[bytes.length + 2 * offset];
+        System.arraycopy(bytes, 0, bytesWithOffset, offset, bytes.length);
+        BytesRef serializedVector = new BytesRef(bytesWithOffset, offset, bytes.length);
+        float[] deserializedVector = vectorSerializer.byteToFloatArray(serializedVector);
+        assertArrayEquals(vector, deserializedVector, 0.02f);
+    }
+
     private float[] getArrayOfRandomFloats(int arrayLength) {
         float[] vector = new float[arrayLength];
         IntStream.range(0, arrayLength).forEach(index -> vector[index] = random.nextFloat());
