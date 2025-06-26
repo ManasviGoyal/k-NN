@@ -168,8 +168,6 @@ public final class KNNVectorValuesFactory {
         switch (vectorDataType) {
             case FLOAT:
                 return (KNNVectorValues<T>) new KNNFloatVectorValues(knnVectorValuesIterator);
-            case HALF_FLOAT:
-                return (KNNVectorValues<T>) new KNNHalfFloatVectorValues(knnVectorValuesIterator);
             case BYTE:
                 return (KNNVectorValues<T>) new KNNByteVectorValues(knnVectorValuesIterator);
             case BINARY:
