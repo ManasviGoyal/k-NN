@@ -356,7 +356,7 @@ public class KNNScoringUtil {
     public static float l2Squared(List<Number> queryVector, KNNVectorScriptDocValues<?> docValues) {
         final VectorDataType vectorDataType = docValues.getVectorDataType();
         requireNonBinaryType("l2Squared", vectorDataType);
-        if (VectorDataType.FLOAT == vectorDataType) {
+        if (VectorDataType.FLOAT == vectorDataType || VectorDataType.HALF_FLOAT == vectorDataType) {
             return l2Squared(toFloat(queryVector, docValues.getVectorDataType()), (float[]) docValues.getValue());
         }
         return l2Squared(toByte(queryVector, docValues.getVectorDataType()), (byte[]) docValues.getValue());

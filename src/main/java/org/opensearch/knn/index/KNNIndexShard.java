@@ -109,7 +109,7 @@ public class KNNIndexShard {
             try {
                 // Partial load Faiss index by triggering search.
                 final VectorDataType vectorDataType = VectorDataType.get(dataTypeStr);
-                if (vectorDataType == VectorDataType.FLOAT) {
+                if (vectorDataType == VectorDataType.FLOAT || vectorDataType == VectorDataType.HALF_FLOAT) {
                     segmentReader.getVectorReader().search(field.getName(), (float[]) null, null, null);
                 } else {
                     segmentReader.getVectorReader().search(field.getName(), (byte[]) null, null, null);
@@ -253,6 +253,12 @@ public class KNNIndexShard {
                 final String spaceTypeName = fieldInfo.attributes().getOrDefault(SPACE_TYPE, SpaceType.L2.getValue());
                 final SpaceType spaceType = SpaceType.getSpace(spaceTypeName);
                 final String modelId = fieldInfo.attributes().getOrDefault(MODEL_ID, null);
+                VectorDataType vectorDataType = VectorDataType.get(
+                    fieldInfo.attributes().getOrDefault(VECTOR_DATA_TYPE_FIELD, VectorDataType.FLOAT.getValue())
+                );
+                if (vectorDataType == VectorDataType.HALF_FLOAT) {
+                    vectorDataType = VectorDataType.FLOAT;
+                }
                 engineFiles.addAll(
                     getEngineFileContexts(
                         reader.getSegmentInfo(),
@@ -261,9 +267,7 @@ public class KNNIndexShard {
                         spaceType,
                         modelId,
                         FieldInfoExtractor.extractQuantizationConfig(fieldInfo) == QuantizationConfig.EMPTY
-                            ? VectorDataType.get(
-                                fieldInfo.attributes().getOrDefault(VECTOR_DATA_TYPE_FIELD, VectorDataType.FLOAT.getValue())
-                            )
+                            ? vectorDataType
                             : VectorDataType.BINARY
                     )
                 );
