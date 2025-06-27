@@ -877,4 +877,196 @@ public class VectorDataTypeIT extends KNNRestTestCase {
         }
         return floatArray;
     }
+
+    @SneakyThrows
+    public void testAddDocWithHalfFloatVectorWhenIndexKnnFalse() {
+        Settings settings = Settings.builder()
+            .put("index.knn", false)
+            .build();
+
+        XContentBuilder builder = XContentFactory.jsonBuilder()
+            .startObject()
+            .startObject(PROPERTIES_FIELD)
+            .startObject(FIELD_NAME)
+            .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+            .field(DIMENSION, 2)
+            .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+            .endObject()
+            .endObject()
+            .endObject();
+
+        String mapping = builder.toString();
+        createKnnIndex(INDEX_NAME, settings, mapping);
+
+        Float[] vector = { 1.5f, 2.5f };
+        addKnnDoc(INDEX_NAME, DOC_ID, FIELD_NAME, vector);
+
+        refreshAllIndices();
+        assertEquals(1, getDocCount(INDEX_NAME));
+    }
+
+    @SneakyThrows
+    public void testUpdateDocWithHalfFloatVectorWhenIndexKnnFalse() {
+        Settings settings = Settings.builder()
+                .put("index.knn", false)
+                .build();
+
+        XContentBuilder builder = XContentFactory.jsonBuilder()
+                .startObject()
+                .startObject(PROPERTIES_FIELD)
+                .startObject(FIELD_NAME)
+                .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+                .field(DIMENSION, 2)
+                .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+                .endObject()
+                .endObject()
+                .endObject();
+
+        String mapping = builder.toString();
+        createKnnIndex(INDEX_NAME, settings, mapping);
+
+        Float[] vector = { 1.5f, 2.5f };
+        addKnnDoc(INDEX_NAME, DOC_ID, FIELD_NAME, vector);
+
+        Float[] updatedVector = { 3.5f, -1.5f };
+        updateKnnDoc(INDEX_NAME, DOC_ID, FIELD_NAME, updatedVector);
+
+        refreshAllIndices();
+        assertEquals(1, getDocCount(INDEX_NAME));
+    }
+
+    @SneakyThrows
+    public void testDeleteDocWithHalfFloatVectorWhenIndexKnnFalse() {
+        Settings settings = Settings.builder()
+                .put("index.knn", false)
+                .build();
+
+        XContentBuilder builder = XContentFactory.jsonBuilder()
+                .startObject()
+                .startObject(PROPERTIES_FIELD)
+                .startObject(FIELD_NAME)
+                .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+                .field(DIMENSION, 2)
+                .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+                .endObject()
+                .endObject()
+                .endObject();
+
+        String mapping = builder.toString();
+        createKnnIndex(INDEX_NAME, settings, mapping);
+
+        Float[] vector = { 1.5f, 2.5f };
+        addKnnDoc(INDEX_NAME, DOC_ID, FIELD_NAME, vector);
+
+        deleteKnnDoc(INDEX_NAME, DOC_ID);
+
+        refreshAllIndices();
+        assertEquals(0, getDocCount(INDEX_NAME));
+    }
+
+    @SneakyThrows
+    public void testScriptScoreSearchWithHalfFloatVectorWhenIndexKnnFalse() {
+        Settings settings = Settings.builder()
+                .put("index.knn", false)
+                .build();
+        XContentBuilder builder = XContentFactory.jsonBuilder()
+                .startObject()
+                .startObject(PROPERTIES_FIELD)
+                .startObject(FIELD_NAME)
+                .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+                .field(DIMENSION, 2)
+                .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+                .endObject()
+                .endObject()
+                .endObject();
+
+        String mapping = builder.toString();
+        createKnnIndex(INDEX_NAME, settings, mapping);
+
+        ingestL2FloatTestData();
+
+        Float[] queryVector = { 1.0f, 1.0f };
+
+        // Use script score query for doc values search
+        Request request = createScriptQueryRequest(queryVector, SpaceType.L2.getValue(), MATCH_ALL_QUERY_BUILDER);
+        Response response = client().performRequest(request);
+        assertEquals(request.getEndpoint() + ": failed", RestStatus.OK, RestStatus.fromCode(response.getStatusLine().getStatusCode()));
+
+        validateL2SearchResults(response);
+    }
+
+    @SneakyThrows
+    public void testInvalidHalfFloatVectorRangeWhenIndexKnnFalse() {
+        Settings settings = Settings.builder()
+            .put("index.knn", false)
+            .build();
+        XContentBuilder builder = XContentFactory.jsonBuilder()
+            .startObject()
+            .startObject(PROPERTIES_FIELD)
+            .startObject(FIELD_NAME)
+            .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+            .field(DIMENSION, 2)
+            .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+            .endObject()
+            .endObject()
+            .endObject();
+
+        String mapping = builder.toString();
+        createKnnIndex(INDEX_NAME, settings, mapping);
+
+        Float[] vector = { 1e10f, -1e10f };
+
+        ResponseException ex = expectThrows(ResponseException.class, () -> addKnnDoc(INDEX_NAME, DOC_ID, FIELD_NAME, vector));
+        assertTrue(
+            ex.getMessage()
+                .contains(
+                    String.format(
+                        Locale.ROOT,
+                        "[%s] field was set as HALF_FLOAT in index mapping. But, KNN vector values are not within in the half float range [%f, %f]",
+                        VECTOR_DATA_TYPE_FIELD,
+                        KNNConstants.FP16_MIN_VALUE,
+                        KNNConstants.FP16_MAX_VALUE
+                    )
+                )
+        );
+    }
+
+    @SneakyThrows
+    public void testHalfFloatVectorWithMethodShowsCorrectError() {
+        XContentBuilder builder = XContentFactory.jsonBuilder()
+                .startObject()
+                .startObject(PROPERTIES_FIELD)
+                .startObject(FIELD_NAME)
+                .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+                .field(DIMENSION, 2)
+                .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+                .startObject(KNNConstants.KNN_METHOD)
+                .field(KNNConstants.NAME, METHOD_HNSW)
+                .field(KNNConstants.METHOD_PARAMETER_SPACE_TYPE, SpaceType.L2.getValue())
+                .field(KNNConstants.KNN_ENGINE, KNNEngine.LUCENE.getName())
+                .startObject(PARAMETERS)
+                .field(KNNConstants.METHOD_PARAMETER_M, M)
+                .field(KNNConstants.METHOD_PARAMETER_EF_CONSTRUCTION, EF_CONSTRUCTION)
+                .endObject()
+                .endObject()
+                .endObject()
+                .endObject()
+                .endObject();
+
+        String mapping = builder.toString();
+
+        ResponseException ex = expectThrows(ResponseException.class, () -> createKnnIndex(INDEX_NAME, mapping));
+
+        assertTrue(
+            ex.getMessage()
+                .contains(
+                    String.format(
+                        Locale.ROOT,
+                        "Method \\\"%s\\\" is not supported for vector data type \\\"%s\\\"",
+                        METHOD_HNSW,
+                        VectorDataType.HALF_FLOAT.name()
+                    )
+                )
+        );
+    }
 }
