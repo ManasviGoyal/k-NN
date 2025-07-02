@@ -53,7 +53,11 @@ public interface KNNScoringSpace {
      * Base class to represent vector space for knn field
      */
     abstract class KNNFieldSpace implements KNNScoringSpace {
-        public static final Set<VectorDataType> DATA_TYPES_DEFAULT = Set.of(VectorDataType.FLOAT, VectorDataType.BYTE, VectorDataType.HALF_FLOAT);
+        public static final Set<VectorDataType> DATA_TYPES_DEFAULT = Set.of(
+            VectorDataType.FLOAT,
+            VectorDataType.BYTE,
+            VectorDataType.HALF_FLOAT
+        );
 
         private Object processedQuery;
         @Getter
