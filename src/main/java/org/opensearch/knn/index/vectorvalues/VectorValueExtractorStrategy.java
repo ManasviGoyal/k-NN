@@ -125,6 +125,11 @@ public interface VectorValueExtractorStrategy {
             if (vectorDataType == VectorDataType.FLOAT) {
                 FloatVectorValues knnVectorValues = (FloatVectorValues) docIdsIteratorValues.getKnnVectorValues();
                 docIdsIteratorValues.setLastAccessedVector(knnVectorValues.vectorValue(ord));
+            } else if (vectorDataType == VectorDataType.HALF_FLOAT) {
+                ByteVectorValues byteVectorValues = (ByteVectorValues) docIdsIteratorValues.getKnnVectorValues();
+                BytesRef halfFloatBytesRef = new BytesRef(byteVectorValues.vectorValue(ord));
+                float[] halfFloatDecoded = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.byteToFloatArray(halfFloatBytesRef);
+                docIdsIteratorValues.setLastAccessedVector(halfFloatDecoded);
             } else if (vectorDataType == VectorDataType.BYTE || vectorDataType == VectorDataType.BINARY) {
                 ByteVectorValues byteVectorValues = (ByteVectorValues) docIdsIteratorValues.getKnnVectorValues();
                 docIdsIteratorValues.setLastAccessedVector(byteVectorValues.vectorValue(ord));
@@ -157,6 +162,7 @@ public interface VectorValueExtractorStrategy {
             switch (vectorDataType) {
                 case FLOAT:
                     return (T) ((KNNVectorValuesIterator.FieldWriterIteratorValues<float[]>) vectorValuesIterator).vectorsValue();
+                case HALF_FLOAT:
                 case BYTE:
                 case BINARY:
                     return (T) ((KNNVectorValuesIterator.FieldWriterIteratorValues<byte[]>) vectorValuesIterator).vectorsValue();
