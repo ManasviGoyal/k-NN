@@ -381,7 +381,7 @@ public class KNNScoringUtil {
     public static float lInfNorm(List<Number> queryVector, KNNVectorScriptDocValues<?> docValues) {
         final VectorDataType vectorDataType = docValues.getVectorDataType();
         requireNonBinaryType("lInfNorm", vectorDataType);
-        if (VectorDataType.FLOAT == vectorDataType) {
+        if (VectorDataType.FLOAT == vectorDataType || VectorDataType.HALF_FLOAT == vectorDataType) {
             return lInfNorm(toFloat(queryVector, docValues.getVectorDataType()), (float[]) docValues.getValue());
         }
         return lInfNorm(toByte(queryVector, docValues.getVectorDataType()), (byte[]) docValues.getValue());
@@ -406,7 +406,7 @@ public class KNNScoringUtil {
     public static float l1Norm(List<Number> queryVector, KNNVectorScriptDocValues<?> docValues) {
         final VectorDataType vectorDataType = docValues.getVectorDataType();
         requireNonBinaryType("l1Norm", vectorDataType);
-        if (VectorDataType.FLOAT == vectorDataType) {
+        if (VectorDataType.FLOAT == vectorDataType || VectorDataType.HALF_FLOAT == vectorDataType) {
             return l1Norm(toFloat(queryVector, docValues.getVectorDataType()), (float[]) docValues.getValue());
         }
         return l1Norm(toByte(queryVector, docValues.getVectorDataType()), (byte[]) docValues.getValue());
@@ -431,7 +431,7 @@ public class KNNScoringUtil {
     public static float innerProduct(List<Number> queryVector, KNNVectorScriptDocValues<?> docValues) {
         final VectorDataType vectorDataType = docValues.getVectorDataType();
         requireNonBinaryType("innerProduct", vectorDataType);
-        if (VectorDataType.FLOAT == vectorDataType) {
+        if (VectorDataType.FLOAT == vectorDataType || VectorDataType.HALF_FLOAT == vectorDataType) {
             return innerProduct(toFloat(queryVector, docValues.getVectorDataType()), (float[]) docValues.getValue());
         }
         return innerProduct(toByte(queryVector, docValues.getVectorDataType()), (byte[]) docValues.getValue());
@@ -456,7 +456,7 @@ public class KNNScoringUtil {
     public static float cosineSimilarity(List<Number> queryVector, KNNVectorScriptDocValues<?> docValues) {
         final VectorDataType vectorDataType = docValues.getVectorDataType();
         requireNonBinaryType("cosineSimilarity", vectorDataType);
-        if (VectorDataType.FLOAT == vectorDataType) {
+        if (VectorDataType.FLOAT == vectorDataType || VectorDataType.HALF_FLOAT == vectorDataType) {
             float[] inputVector = toFloat(queryVector, docValues.getVectorDataType());
             SpaceType.COSINESIMIL.validateVector(inputVector);
             return cosinesimil(inputVector, (float[]) docValues.getValue());
@@ -489,7 +489,7 @@ public class KNNScoringUtil {
         requireNonBinaryType("cosineSimilarity", vectorDataType);
         float[] inputVector = toFloat(queryVector, docValues.getVectorDataType());
         SpaceType.COSINESIMIL.validateVector(inputVector);
-        if (VectorDataType.FLOAT == vectorDataType) {
+        if (VectorDataType.FLOAT == vectorDataType || VectorDataType.HALF_FLOAT == vectorDataType) {
             return cosinesimilOptimized(inputVector, (float[]) docValues.getValue(), queryVectorMagnitude.floatValue());
         } else {
             byte[] docVectorInByte = (byte[]) docValues.getValue();
