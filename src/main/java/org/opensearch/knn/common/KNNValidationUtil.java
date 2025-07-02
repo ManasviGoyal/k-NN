@@ -48,13 +48,13 @@ public class KNNValidationUtil {
 
         if (value < FP16_MIN_VALUE || value > FP16_MAX_VALUE) {
             throw new IllegalArgumentException(
-                    String.format(
-                            Locale.ROOT,
-                            "[%s] field was set as HALF_FLOAT in index mapping. But, KNN vector values are not within in the half float range [%f, %f]",
-                            VECTOR_DATA_TYPE_FIELD,
-                            FP16_MIN_VALUE,
-                            FP16_MAX_VALUE
-                    )
+                String.format(
+                    Locale.ROOT,
+                    "[%s] field was set as HALF_FLOAT in index mapping. But, KNN vector values are not within in the half float range [%f, %f]",
+                    VECTOR_DATA_TYPE_FIELD,
+                    FP16_MIN_VALUE,
+                    FP16_MAX_VALUE
+                )
             );
         }
     }

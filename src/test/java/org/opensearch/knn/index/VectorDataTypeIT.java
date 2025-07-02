@@ -880,9 +880,7 @@ public class VectorDataTypeIT extends KNNRestTestCase {
 
     @SneakyThrows
     public void testAddDocWithHalfFloatVectorWhenIndexKnnFalse() {
-        Settings settings = Settings.builder()
-            .put("index.knn", false)
-            .build();
+        Settings settings = Settings.builder().put("index.knn", false).build();
 
         XContentBuilder builder = XContentFactory.jsonBuilder()
             .startObject()
@@ -907,20 +905,18 @@ public class VectorDataTypeIT extends KNNRestTestCase {
 
     @SneakyThrows
     public void testUpdateDocWithHalfFloatVectorWhenIndexKnnFalse() {
-        Settings settings = Settings.builder()
-                .put("index.knn", false)
-                .build();
+        Settings settings = Settings.builder().put("index.knn", false).build();
 
         XContentBuilder builder = XContentFactory.jsonBuilder()
-                .startObject()
-                .startObject(PROPERTIES_FIELD)
-                .startObject(FIELD_NAME)
-                .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
-                .field(DIMENSION, 2)
-                .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
-                .endObject()
-                .endObject()
-                .endObject();
+            .startObject()
+            .startObject(PROPERTIES_FIELD)
+            .startObject(FIELD_NAME)
+            .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+            .field(DIMENSION, 2)
+            .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+            .endObject()
+            .endObject()
+            .endObject();
 
         String mapping = builder.toString();
         createKnnIndex(INDEX_NAME, settings, mapping);
@@ -937,20 +933,18 @@ public class VectorDataTypeIT extends KNNRestTestCase {
 
     @SneakyThrows
     public void testDeleteDocWithHalfFloatVectorWhenIndexKnnFalse() {
-        Settings settings = Settings.builder()
-                .put("index.knn", false)
-                .build();
+        Settings settings = Settings.builder().put("index.knn", false).build();
 
         XContentBuilder builder = XContentFactory.jsonBuilder()
-                .startObject()
-                .startObject(PROPERTIES_FIELD)
-                .startObject(FIELD_NAME)
-                .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
-                .field(DIMENSION, 2)
-                .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
-                .endObject()
-                .endObject()
-                .endObject();
+            .startObject()
+            .startObject(PROPERTIES_FIELD)
+            .startObject(FIELD_NAME)
+            .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+            .field(DIMENSION, 2)
+            .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+            .endObject()
+            .endObject()
+            .endObject();
 
         String mapping = builder.toString();
         createKnnIndex(INDEX_NAME, settings, mapping);
@@ -966,19 +960,17 @@ public class VectorDataTypeIT extends KNNRestTestCase {
 
     @SneakyThrows
     public void testScriptScoreSearchWithHalfFloatVectorWhenIndexKnnFalse() {
-        Settings settings = Settings.builder()
-                .put("index.knn", false)
-                .build();
+        Settings settings = Settings.builder().put("index.knn", false).build();
         XContentBuilder builder = XContentFactory.jsonBuilder()
-                .startObject()
-                .startObject(PROPERTIES_FIELD)
-                .startObject(FIELD_NAME)
-                .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
-                .field(DIMENSION, 2)
-                .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
-                .endObject()
-                .endObject()
-                .endObject();
+            .startObject()
+            .startObject(PROPERTIES_FIELD)
+            .startObject(FIELD_NAME)
+            .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+            .field(DIMENSION, 2)
+            .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+            .endObject()
+            .endObject()
+            .endObject();
 
         String mapping = builder.toString();
         createKnnIndex(INDEX_NAME, settings, mapping);
@@ -997,9 +989,7 @@ public class VectorDataTypeIT extends KNNRestTestCase {
 
     @SneakyThrows
     public void testInvalidHalfFloatVectorRangeWhenIndexKnnFalse() {
-        Settings settings = Settings.builder()
-            .put("index.knn", false)
-            .build();
+        Settings settings = Settings.builder().put("index.knn", false).build();
         XContentBuilder builder = XContentFactory.jsonBuilder()
             .startObject()
             .startObject(PROPERTIES_FIELD)
@@ -1034,24 +1024,24 @@ public class VectorDataTypeIT extends KNNRestTestCase {
     @SneakyThrows
     public void testHalfFloatVectorWithMethodShowsCorrectError() {
         XContentBuilder builder = XContentFactory.jsonBuilder()
-                .startObject()
-                .startObject(PROPERTIES_FIELD)
-                .startObject(FIELD_NAME)
-                .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
-                .field(DIMENSION, 2)
-                .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
-                .startObject(KNNConstants.KNN_METHOD)
-                .field(KNNConstants.NAME, METHOD_HNSW)
-                .field(KNNConstants.METHOD_PARAMETER_SPACE_TYPE, SpaceType.L2.getValue())
-                .field(KNNConstants.KNN_ENGINE, KNNEngine.LUCENE.getName())
-                .startObject(PARAMETERS)
-                .field(KNNConstants.METHOD_PARAMETER_M, M)
-                .field(KNNConstants.METHOD_PARAMETER_EF_CONSTRUCTION, EF_CONSTRUCTION)
-                .endObject()
-                .endObject()
-                .endObject()
-                .endObject()
-                .endObject();
+            .startObject()
+            .startObject(PROPERTIES_FIELD)
+            .startObject(FIELD_NAME)
+            .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+            .field(DIMENSION, 2)
+            .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+            .startObject(KNNConstants.KNN_METHOD)
+            .field(KNNConstants.NAME, METHOD_HNSW)
+            .field(KNNConstants.METHOD_PARAMETER_SPACE_TYPE, SpaceType.L2.getValue())
+            .field(KNNConstants.KNN_ENGINE, KNNEngine.LUCENE.getName())
+            .startObject(PARAMETERS)
+            .field(KNNConstants.METHOD_PARAMETER_M, M)
+            .field(KNNConstants.METHOD_PARAMETER_EF_CONSTRUCTION, EF_CONSTRUCTION)
+            .endObject()
+            .endObject()
+            .endObject()
+            .endObject()
+            .endObject();
 
         String mapping = builder.toString();
 

@@ -52,43 +52,34 @@ public class KNNValidationUtilTests extends KNNTestCase {
     }
 
     public void testValidateHalfFloatVectorValue_whenValueTooLarge_thenThrowException() {
-        Exception ex = expectThrows(
-                IllegalArgumentException.class,
-                () -> KNNValidationUtil.validateHalfFloatVectorValue(65505.0f)
-        );
+        Exception ex = expectThrows(IllegalArgumentException.class, () -> KNNValidationUtil.validateHalfFloatVectorValue(65505.0f));
         assertThat(ex.getMessage(), containsString("KNN vector values are not within in the half float range"));
         assertThat(ex.getMessage(), containsString("65504"));
     }
 
     public void testValidateHalfFloatVectorValue_whenValueTooSmall_thenThrowException() {
-        Exception ex = expectThrows(
-                IllegalArgumentException.class,
-                () -> KNNValidationUtil.validateHalfFloatVectorValue(-65505.0f)
-        );
+        Exception ex = expectThrows(IllegalArgumentException.class, () -> KNNValidationUtil.validateHalfFloatVectorValue(-65505.0f));
         assertThat(ex.getMessage(), containsString("KNN vector values are not within in the half float range"));
         assertThat(ex.getMessage(), containsString("-65504"));
     }
 
     public void testValidateHalfFloatVectorValue_whenNaN_thenThrowException() {
-        Exception ex = expectThrows(
-                IllegalArgumentException.class,
-                () -> KNNValidationUtil.validateHalfFloatVectorValue(Float.NaN)
-        );
+        Exception ex = expectThrows(IllegalArgumentException.class, () -> KNNValidationUtil.validateHalfFloatVectorValue(Float.NaN));
         assertThat(ex.getMessage(), containsString("cannot be NaN"));
     }
 
     public void testValidateHalfFloatVectorValue_whenPositiveInfinity_thenThrowException() {
         Exception ex = expectThrows(
-                IllegalArgumentException.class,
-                () -> KNNValidationUtil.validateHalfFloatVectorValue(Float.POSITIVE_INFINITY)
+            IllegalArgumentException.class,
+            () -> KNNValidationUtil.validateHalfFloatVectorValue(Float.POSITIVE_INFINITY)
         );
         assertThat(ex.getMessage(), containsString("cannot be infinity"));
     }
 
     public void testValidateHalfFloatVectorValue_whenNegativeInfinity_thenThrowException() {
         Exception ex = expectThrows(
-                IllegalArgumentException.class,
-                () -> KNNValidationUtil.validateHalfFloatVectorValue(Float.NEGATIVE_INFINITY)
+            IllegalArgumentException.class,
+            () -> KNNValidationUtil.validateHalfFloatVectorValue(Float.NEGATIVE_INFINITY)
         );
         assertThat(ex.getMessage(), containsString("cannot be infinity"));
     }

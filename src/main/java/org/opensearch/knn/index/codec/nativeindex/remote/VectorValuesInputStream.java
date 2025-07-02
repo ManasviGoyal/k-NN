@@ -19,9 +19,6 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.opensearch.knn.index.VectorDataType.BINARY;
-import static org.opensearch.knn.index.VectorDataType.BYTE;
-import static org.opensearch.knn.index.VectorDataType.FLOAT;
 import static org.opensearch.knn.index.codec.util.KNNCodecUtil.initializeVectorValues;
 
 /**

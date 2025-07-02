@@ -30,7 +30,6 @@ public class KNNCodecUtil {
     // Half-floats are 2 bytes in size
     public static final int HALF_FLOAT_BYTE_SIZE = 2;
 
-
     /**
      * This method provides a rough estimate of the number of bytes used for storing an array with the given parameters.
      * @param numVectors number of vectors in the array

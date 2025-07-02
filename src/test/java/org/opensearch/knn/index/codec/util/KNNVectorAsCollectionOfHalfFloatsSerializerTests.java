@@ -75,13 +75,7 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializerTests extends KNNTestCas
     }
 
     public void testSpecialFloatValues() {
-        float[] specialValues = new float[]{
-                Float.NaN,
-                Float.POSITIVE_INFINITY,
-                Float.NEGATIVE_INFINITY,
-                -0.0f,
-                0.0f
-        };
+        float[] specialValues = new float[] { Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY, -0.0f, 0.0f };
 
         KNNVectorSerializer serializer = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;
         byte[] encoded = serializer.floatToByteArray(specialValues);
@@ -96,11 +90,11 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializerTests extends KNNTestCas
     }
 
     public void testFp16PrecisionLimits() {
-        float[] boundaryValues = new float[]{
-                65504.0f,         // Max fp16 value
-                -65504.0f,        // Min fp16 value
-                6.103515625e-5f,  // Smallest positive normal fp16
-                -6.103515625e-5f, // Smallest negative normal fp16
+        float[] boundaryValues = new float[] {
+            65504.0f,         // Max fp16 value
+            -65504.0f,        // Min fp16 value
+            6.103515625e-5f,  // Smallest positive normal fp16
+            -6.103515625e-5f, // Smallest negative normal fp16
         };
 
         KNNVectorSerializer serializer = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;

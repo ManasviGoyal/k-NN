@@ -8,7 +8,6 @@ package org.opensearch.knn.index;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.index.IndexableFieldType;
 import org.apache.lucene.util.BytesRef;
-import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfFloatsSerializer;
 import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
 import org.opensearch.knn.index.codec.util.KNNVectorSerializer;
