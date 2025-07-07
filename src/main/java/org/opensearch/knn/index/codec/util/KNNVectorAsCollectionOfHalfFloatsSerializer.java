@@ -58,4 +58,25 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer implements KNNVectorSer
 
         return vector;
     }
+
+    /**
+     * Converts a BytesRef-wrapped byte array (encoded as float16) back into a float array, writing into a preallocated buffer.
+     * This version matches the endian handling of FaissFP16Reconstructor (big-endian only).
+     *
+     * @param bytesRef the BytesRef containing float16-encoded vector data
+     * @param dest the float[] buffer to write the decoded float32 values into
+     */
+    public void byteToFloatArray(BytesRef bytesRef, float[] dest) {
+        if (bytesRef == null || bytesRef.length % BYTES_IN_HALF_FLOAT != 0) {
+            throw new IllegalArgumentException("Byte stream cannot be deserialized to array of half-floats");
+        }
+        final int sizeOfFloatArray = bytesRef.length / BYTES_IN_HALF_FLOAT;
+        byte[] bytes = bytesRef.bytes;
+        int offset = bytesRef.offset;
+        for (int i = 0, j = 0; j < sizeOfFloatArray; i += 2, ++j) {
+
+            short fp16 = (short)(((bytes[offset + i] & 0xFF) << 8) | (bytes[offset + i + 1] & 0xFF));
+            dest[j] = Float.float16ToFloat(fp16);
+        }
+    }
 }

@@ -102,7 +102,9 @@ public interface VectorValueExtractorStrategy {
             if (vectorDataType == VectorDataType.FLOAT) {
                 return (T) getFloatVectorFromByteRef(bytesRef);
             } else if (vectorDataType == VectorDataType.HALF_FLOAT) {
-                return (T) getHalfFloatVectorFromByteRef(bytesRef);
+                int dimension = bytesRef.length / 2;
+                float[] dest = new float[dimension];
+                return (T) getHalfFloatVectorFromByteRef(bytesRef, dest);
             } else if (vectorDataType == VectorDataType.BYTE || vectorDataType == VectorDataType.BINARY) {
                 return (T) ArrayUtil.copyOfSubArray(bytesRef.bytes, bytesRef.offset, bytesRef.offset + bytesRef.length);
             }
@@ -138,9 +140,9 @@ public interface VectorValueExtractorStrategy {
             return vectorSerializer.byteToFloatArray(bytesRef);
         }
 
-        private float[] getHalfFloatVectorFromByteRef(final BytesRef bytesRef) {
-            final KNNVectorSerializer vectorSerializer = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;
-            return vectorSerializer.byteToFloatArray(bytesRef);
+        private float[] getHalfFloatVectorFromByteRef(final BytesRef bytesRef, float[] dest) {
+            KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.byteToFloatArray(bytesRef, dest);
+            return dest;
         }
     }
 
