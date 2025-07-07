@@ -50,7 +50,9 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer implements KNNVectorSer
         final int sizeOfFloatArray = bytesRef.length / BYTES_IN_HALF_FLOAT;
         final float[] vector = new float[sizeOfFloatArray];
 
-        ShortBuffer sb = ByteBuffer.wrap(bytesRef.bytes, bytesRef.offset, bytesRef.length).order(ByteOrder.BIG_ENDIAN).asShortBuffer();
+        ShortBuffer sb = ByteBuffer.wrap(bytesRef.bytes, bytesRef.offset, bytesRef.length)
+                .order(ByteOrder.BIG_ENDIAN)
+                .asShortBuffer();
 
         for (int i = 0; i < sizeOfFloatArray; i++) {
             vector[i] = Float.float16ToFloat(sb.get());

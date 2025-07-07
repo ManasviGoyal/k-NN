@@ -38,12 +38,12 @@ public class HalfFloatFlatVectorsFormat extends FlatVectorsFormat {
 
     @Override
     public FlatVectorsWriter fieldsWriter(SegmentWriteState state) throws IOException {
-        return new HalfFloatFlatVectorsWriter(lucene99FlatVectorsFormat.fieldsWriter(state), state);
+        return new HalfFloatFlatVectorsWriter(lucene99FlatVectorsFormat.fieldsWriter(state));
     }
 
     @Override
     public FlatVectorsReader fieldsReader(SegmentReadState state) throws IOException {
-        return new HalfFloatFlatVectorsReader(lucene99FlatVectorsFormat.fieldsReader(state), state);
+        return new HalfFloatFlatVectorsReader(lucene99FlatVectorsFormat.fieldsReader(state), state.fieldInfos);
     }
 
     @Override

@@ -9,8 +9,9 @@ import org.apache.lucene.codecs.hnsw.FlatVectorsReader;
 import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.search.KnnCollector;
 import org.apache.lucene.index.KnnVectorValues;
-import org.apache.lucene.index.SegmentReadState;
+import org.apache.lucene.index.FieldInfos;
 import org.apache.lucene.util.Bits;
+import org.apache.lucene.util.hnsw.RandomVectorScorer;
 import org.opensearch.knn.common.FieldInfoExtractor;
 import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.vectorvalues.KNNVectorValuesFactory;
@@ -19,21 +20,27 @@ import java.io.IOException;
 
 public class HalfFloatFlatVectorsReader extends FlatVectorsReader {
     private final FlatVectorsReader delegate;
-    private final SegmentReadState state;
+    private final FieldInfos fieldInfos;
 
-    public HalfFloatFlatVectorsReader(FlatVectorsReader delegate, SegmentReadState state) {
-        super(delegate.getScorer());
+    public HalfFloatFlatVectorsReader(FlatVectorsReader delegate, FieldInfos fieldInfos) {
+        super(delegate.getFlatVectorScorer());
         this.delegate = delegate;
-        this.state = state;
+        this.fieldInfos = fieldInfos;
+    }
+
+    @Override
+    public org.apache.lucene.index.ByteVectorValues getByteVectorValues(String field) throws IOException {
+        // Delegate to the underlying reader
+        return delegate.getByteVectorValues(field);
     }
 
     @Override
     public KnnVectorValues getVectorValues(String field) throws IOException {
-        FieldInfo fieldInfo = state.fieldInfos.fieldInfo(field);
+        FieldInfo fieldInfo = fieldInfos.fieldInfo(field);
         VectorDataType vectorDataType = FieldInfoExtractor.extractVectorDataType(fieldInfo);
-        KnnVectorValues base = delegate.getVectorValues(field);
+        KnnVectorValues base = delegate.getVectorValues(field); // Correctly delegate
         if (vectorDataType == VectorDataType.HALF_FLOAT) {
-            // Use the factory method to wrap values in KNNHalfFloatVectorValues
+            // Only wrap if base is not already a half-float wrapper
             return KNNVectorValuesFactory.getVectorValues(vectorDataType, base);
         } else {
             return base;
@@ -41,7 +48,7 @@ public class HalfFloatFlatVectorsReader extends FlatVectorsReader {
     }
 
     @Override
-    public void search(String field, byte[] target, KnnCollector knnCollector, Bits acceptDocs) throws IOException {
+    public void search(String field, float[] target, KnnCollector knnCollector, Bits acceptDocs) throws IOException {
         delegate.search(field, target, knnCollector, acceptDocs);
     }
 
@@ -51,7 +58,19 @@ public class HalfFloatFlatVectorsReader extends FlatVectorsReader {
     }
 
     @Override
-    public FlatVectorsReader getRandomVectorScorer(String field, byte[] target) throws IOException {
+    public RandomVectorScorer getRandomVectorScorer(String field, float[] target) throws IOException {
+        // Delegate to the underlying reader
         return delegate.getRandomVectorScorer(field, target);
+    }
+
+    @Override
+    public RandomVectorScorer getRandomVectorScorer(String field, byte[] target) throws IOException {
+        // Delegate to the underlying reader
+        return delegate.getRandomVectorScorer(field, target);
+    }
+
+    @Override
+    public FlatVectorsReader getMergeInstance() {
+        return new HalfFloatFlatVectorsReader(delegate.getMergeInstance(), fieldInfos);
     }
 }
