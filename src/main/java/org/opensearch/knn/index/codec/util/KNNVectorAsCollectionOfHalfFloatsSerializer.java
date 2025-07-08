@@ -48,35 +48,33 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer implements KNNVectorSer
             throw new IllegalArgumentException("Byte stream cannot be deserialized to array of half-floats");
         }
         final int sizeOfFloatArray = bytesRef.length / BYTES_IN_HALF_FLOAT;
-        final float[] vector = new float[sizeOfFloatArray];
 
         ShortBuffer sb = ByteBuffer.wrap(bytesRef.bytes, bytesRef.offset, bytesRef.length).order(ByteOrder.BIG_ENDIAN).asShortBuffer();
+        float[] floats = new float[sizeOfFloatArray];
 
         for (int i = 0; i < sizeOfFloatArray; i++) {
-            vector[i] = Float.float16ToFloat(sb.get());
+            floats[i] = Float.float16ToFloat(sb.get());
         }
-
-        return vector;
+        return floats;
     }
 
     /**
-     * Converts a BytesRef-wrapped byte array (encoded as float16) back into a float array, writing into a preallocated buffer.
-     * This version matches the endian handling of FaissFP16Reconstructor (big-endian only).
+     * Deserializes all bytes from the stream to array of floats
      *
-     * @param bytesRef the BytesRef containing float16-encoded vector data
-     * @param dest the float[] buffer to write the decoded float32 values into
+     * @param bytesRef bytes that will be used for deserialization to array of floats
+     * @param floats array of floats to fill with deserialized values
      */
-    public void byteToFloatArray(BytesRef bytesRef, float[] dest) {
+    @Override
+    public void byteToFloatArray(BytesRef bytesRef, float[] floats) {
         if (bytesRef == null || bytesRef.length % BYTES_IN_HALF_FLOAT != 0) {
             throw new IllegalArgumentException("Byte stream cannot be deserialized to array of half-floats");
         }
         final int sizeOfFloatArray = bytesRef.length / BYTES_IN_HALF_FLOAT;
-        byte[] bytes = bytesRef.bytes;
-        int offset = bytesRef.offset;
-        for (int i = 0, j = 0; j < sizeOfFloatArray; i += 2, ++j) {
 
-            short fp16 = (short)(((bytes[offset + i] & 0xFF) << 8) | (bytes[offset + i + 1] & 0xFF));
-            dest[j] = Float.float16ToFloat(fp16);
+        ShortBuffer sb = ByteBuffer.wrap(bytesRef.bytes, bytesRef.offset, bytesRef.length).order(ByteOrder.BIG_ENDIAN).asShortBuffer();
+
+        for (int i = 0; i < sizeOfFloatArray; i++) {
+            floats[i] = Float.float16ToFloat(sb.get());
         }
     }
 }
