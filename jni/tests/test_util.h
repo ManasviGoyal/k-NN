@@ -103,6 +103,9 @@ namespace test_util {
         MOCK_METHOD(void, SetByteArrayRegion,
                     (JNIEnv * env, jbyteArray array, jsize start, jsize len,
                             const jbyte* buf));
+        MOCK_METHOD(void, SetFloatArrayRegion,
+                    (JNIEnv * env, jfloatArray array, jsize start, jsize len,
+                            const jfloat* buffer));
         MOCK_METHOD(void, SetObjectArrayElement,
                     (JNIEnv * env, jobjectArray array, jsize index, jobject val));
         MOCK_METHOD(void, ThrowJavaException,

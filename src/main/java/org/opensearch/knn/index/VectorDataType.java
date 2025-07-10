@@ -87,24 +87,18 @@ public enum VectorDataType {
 
         @Override
         public FieldType createKnnVectorFieldType(int dimension, KNNVectorSimilarityFunction knnVectorSimilarityFunction) {
-            FieldType type = new FieldType();
-            type.setDimensions(dimension, 2);
-            type.freeze();
-            return type;
+            return KnnFloatVectorField.createFieldType(dimension, knnVectorSimilarityFunction.getVectorSimilarityFunction());
         }
 
         @Override
         public float[] getVectorFromBytesRef(BytesRef binaryValue) {
             final KNNVectorSerializer vectorSerializer = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;
-            int size = binaryValue.length / 2;
-            float[] floats = new float[size];
-            vectorSerializer.byteToFloatArray(binaryValue, floats);
-            return floats;
+            return vectorSerializer.byteToFloatArray(binaryValue);
         }
 
         @Override
         public TrainingDataConsumer getTrainingDataConsumer(NativeMemoryAllocation.TrainingDataAllocation trainingDataAllocation) {
-            return new FloatTrainingDataConsumer(trainingDataAllocation); // FIXME: Need to adapt it for fp16 if needed
+            return new FloatTrainingDataConsumer(trainingDataAllocation);
         }
 
         @Override

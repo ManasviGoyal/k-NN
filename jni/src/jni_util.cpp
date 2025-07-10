@@ -547,6 +547,11 @@ void knn_jni::JNIUtil::SetByteArrayRegion(JNIEnv *env, jbyteArray array, jsize s
     this->HasExceptionInStack(env, "Unable to set byte array region");
 }
 
+void knn_jni::JNIUtil::SetFloatArrayRegion(JNIEnv* env, jfloatArray array, jsize start, jsize len, const jfloat* buffer) {
+    env->SetFloatArrayRegion(array, start, len, buffer);
+    this->HasExceptionInStack(env, "Unable to set float array region");
+}
+
 jobject knn_jni::JNIUtil::GetObjectField(JNIEnv * env, jobject obj, jfieldID fieldID) {
     return env->GetObjectField(obj, fieldID);
 }

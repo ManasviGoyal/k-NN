@@ -127,6 +127,8 @@ namespace knn_jni {
 
         virtual void SetByteArrayRegion(JNIEnv *env, jbyteArray array, jsize start, jsize len, const jbyte * buf) = 0;
 
+        virtual void SetFloatArrayRegion(JNIEnv* env, jfloatArray array, jsize start, jsize len, const jfloat* buffer) = 0;
+
         virtual jobject GetObjectField(JNIEnv * env, jobject obj, jfieldID fieldID) = 0;
 
         virtual jclass FindClassFromJNIEnv(JNIEnv * env, const char *name) = 0;
@@ -195,6 +197,8 @@ namespace knn_jni {
         void ReleaseLongArrayElements(JNIEnv *env, jlongArray array, jlong *elems, jint mode) final;
         void SetObjectArrayElement(JNIEnv *env, jobjectArray array, jsize index, jobject val) final;
         void SetByteArrayRegion(JNIEnv *env, jbyteArray array, jsize start, jsize len, const jbyte * buf) final;
+        void SetFloatArrayRegion(JNIEnv* env, jfloatArray array, jsize start, jsize len, const jfloat* buffer) final;
+
         void Convert2dJavaObjectArrayAndStoreToFloatVector(JNIEnv *env, jobjectArray array2dJ, int dim, std::vector<float> *vect) final;
         void Convert2dJavaObjectArrayAndStoreToBinaryVector(JNIEnv *env, jobjectArray array2dJ, int dim, std::vector<uint8_t> *vect) final;
         void Convert2dJavaObjectArrayAndStoreToByteVector(JNIEnv *env, jobjectArray array2dJ, int dim, std::vector<int8_t> *vect) final;

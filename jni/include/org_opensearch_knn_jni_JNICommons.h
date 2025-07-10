@@ -66,6 +66,14 @@ JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_JNICommons_freeBinaryVectorDa
 JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_JNICommons_freeByteVectorData
 (JNIEnv *, jclass, jlong);
 
+/*
+ * Class:     org_opensearch_knn_jni_JNICommons
+ * Method:    bytesToFloatArray
+ * Signature: ([B)[F
+ */
+JNIEXPORT jfloatArray JNICALL Java_org_opensearch_knn_jni_JNICommons_bytesToFloatArray
+  (JNIEnv *, jclass, jbyteArray);
+
 #ifdef __cplusplus
 }
 #endif

@@ -7,6 +7,8 @@ package org.opensearch.knn.index.codec.util;
 
 import org.apache.lucene.util.BytesRef;
 
+import org.opensearch.knn.jni.JNICommons;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.ShortBuffer;
@@ -47,15 +49,9 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer implements KNNVectorSer
         if (bytesRef == null || bytesRef.length % BYTES_IN_HALF_FLOAT != 0) {
             throw new IllegalArgumentException("Byte stream cannot be deserialized to array of half-floats");
         }
-        final int sizeOfFloatArray = bytesRef.length / BYTES_IN_HALF_FLOAT;
-
-        ShortBuffer sb = ByteBuffer.wrap(bytesRef.bytes, bytesRef.offset, bytesRef.length).order(ByteOrder.BIG_ENDIAN).asShortBuffer();
-        float[] floats = new float[sizeOfFloatArray];
-
-        for (int i = 0; i < sizeOfFloatArray; i++) {
-            floats[i] = Float.float16ToFloat(sb.get());
-        }
-        return floats;
+        byte[] halfFloatBytes = new byte[bytesRef.length];
+        System.arraycopy(bytesRef.bytes, bytesRef.offset, halfFloatBytes, 0, bytesRef.length);
+        return JNICommons.bytesToFloatArray(halfFloatBytes);
     }
 
     /**

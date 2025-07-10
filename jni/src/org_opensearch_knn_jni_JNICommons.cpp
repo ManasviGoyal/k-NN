@@ -103,3 +103,13 @@ JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_JNICommons_freeByteVectorData
         jniUtil.CatchCppExceptionAndThrowJava(env);
     }
 }
+
+JNIEXPORT jfloatArray JNICALL Java_org_opensearch_knn_jni_JNICommons_bytesToFloatArray(JNIEnv *env, jclass cls, jbyteArray fp16Data)
+{
+    try {
+        return knn_jni::commons::bytesToFloatArray(&jniUtil, env, fp16Data);
+    } catch (...) {
+        jniUtil.CatchCppExceptionAndThrowJava(env);
+    }
+    return nullptr;
+}

@@ -255,6 +255,17 @@ test_util::MockJNIUtil::MockJNIUtil() {
                 }
             });
 
+    // array is re-interpreted as a std::vector<float> * and then the floats from
+    // buffer are copied to it
+    ON_CALL(*this, SetFloatArrayRegion)
+            .WillByDefault([this](JNIEnv *env, jfloatArray array, jsize start,
+                                  jsize len, const jfloat *buffer) {
+                auto floatBuffer = reinterpret_cast<std::vector<float> *>(array);
+                for (int i = start; i < len; ++i) {
+                    floatBuffer->push_back(buffer[i]);
+                }
+            });
+
     // array is re-interpreted as a std::vector<std::pair<int, float> *> * and
     // then val is re-interpreted as a std::pair<int, float> * and added to the
     // vector

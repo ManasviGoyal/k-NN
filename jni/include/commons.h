@@ -101,6 +101,16 @@ namespace knn_jni {
          * Extracts query time efSearch from method parameters
          **/
         int getIntegerMethodParameter(JNIEnv *, knn_jni::JNIUtilInterface *, std::unordered_map<std::string, jobject>, std::string, int);
+
+        /**
+         * Converts a byte array of fp16 (2 bytes per value) to a float array (float32) and returns it as a Java float array.
+         * This is a JNI wrapper around the bytesToFloatArray utility function for direct use from Java.
+         *
+         * @param env JNI environment pointer
+         * @param halfFloatBytes Java byte array containing fp16 data (2 bytes per float16 value)
+         * @return Java float array containing the converted fp32 values
+         */
+        jfloatArray bytesToFloatArray(knn_jni::JNIUtilInterface *, JNIEnv *, jbyteArray halfFloatBytes);
     }
 }
 
