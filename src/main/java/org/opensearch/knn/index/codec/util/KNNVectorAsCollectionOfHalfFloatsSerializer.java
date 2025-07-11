@@ -51,7 +51,7 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer implements KNNVectorSer
         }
         byte[] halfFloatBytes = new byte[bytesRef.length];
         System.arraycopy(bytesRef.bytes, bytesRef.offset, halfFloatBytes, 0, bytesRef.length);
-        return JNICommons.bytesToFloatArray(halfFloatBytes);
+        return JNICommons.simdFp16ToFp32(halfFloatBytes);
     }
 
     /**

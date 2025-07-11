@@ -104,10 +104,20 @@ JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_JNICommons_freeByteVectorData
     }
 }
 
-JNIEXPORT jfloatArray JNICALL Java_org_opensearch_knn_jni_JNICommons_bytesToFloatArray(JNIEnv *env, jclass cls, jbyteArray fp16Data)
+JNIEXPORT jfloatArray JNICALL Java_org_opensearch_knn_jni_JNICommons_bytesToFloatArray(JNIEnv *env, jclass cls, jbyteArray halfFloatBytes)
 {
     try {
-        return knn_jni::commons::bytesToFloatArray(&jniUtil, env, fp16Data);
+        return knn_jni::commons::bytesToFloatArray(&jniUtil, env, halfFloatBytes);
+    } catch (...) {
+        jniUtil.CatchCppExceptionAndThrowJava(env);
+    }
+    return nullptr;
+}
+
+JNIEXPORT jfloatArray JNICALL Java_org_opensearch_knn_jni_JNICommons_simdFp16ToFp32(JNIEnv *env, jclass cls, jbyteArray halfFloatBytes)
+{
+    try {
+        return knn_jni::commons::simdFp16ToFp32(&jniUtil, env, halfFloatBytes);
     } catch (...) {
         jniUtil.CatchCppExceptionAndThrowJava(env);
     }

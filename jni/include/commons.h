@@ -111,6 +111,17 @@ namespace knn_jni {
          * @return Java float array containing the converted fp32 values
          */
         jfloatArray bytesToFloatArray(knn_jni::JNIUtilInterface *, JNIEnv *, jbyteArray halfFloatBytes);
+
+        /**
+         * SIMD-accelerated conversion of fp16 byte array to fp32 float array.
+         * This is a JNI wrapper for direct use from Java, using NEON/AVX2 if available.
+         *
+         * @param jniUtil JNI utility interface pointer
+         * @param env JNI environment pointer
+         * @param halfFloatBytes Java byte array containing fp16 data (2 bytes per float16 value)
+         * @return Java float array containing the converted fp32 values
+         */
+        jfloatArray simdFp16ToFp32(knn_jni::JNIUtilInterface *, JNIEnv *, jbyteArray halfFloatBytes);
     }
 }
 
