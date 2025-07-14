@@ -201,8 +201,9 @@ public class JNICommons {
     /**
      * Converts an array of half-precision (fp16) bytes to a float array using native code.
      *
-     * @param halfFloatBytes byte array containing fp16 values (2 bytes per value)
-     * @return float array with the converted float32 values
+     * @param fp16Array byte array containing fp16 values (2 bytes per value)
+     * @param fp32Array float array to fill with the converted float32 values
+     * @param count number of half-float values to convert
      */
-    public static native float[] simdFp16ToFp32(byte[] halfFloatBytes);
+    public static native void convertFP16ToFP32(byte[] fp16Array, float[] fp32Array, int count);
 }

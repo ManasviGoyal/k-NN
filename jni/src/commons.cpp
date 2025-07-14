@@ -13,12 +13,7 @@
 #include <string>
 #include <cmath>
 
-#if defined(__aarch64__)
-  #include <arm_neon.h>
-#elif defined(__AVX512FP16__)
-  #include <immintrin.h>
-#endif
-
+#include <arm_neon.h>
 #include <vector>
 
 #include "jni_util.h"
@@ -193,121 +188,34 @@ jfloatArray knn_jni::commons::bytesToFloatArray(knn_jni::JNIUtilInterface *jniUt
     return result;
 }
 
-static float fp16_ieee_to_fp32(uint16_t h) {
-    uint32_t sign = (h & 0x8000u) << 16;
-    uint32_t exp  = (h & 0x7C00u) >> 10;
-    uint32_t mant = (h & 0x03FFu);
+void knn_jni::commons::convertFP16ToFP32(JNIEnv* env,
+                                        jbyteArray fp16Array,
+                                        jfloatArray fp32Array,
+                                        jint count) {
+    if (count <= 0) return;
 
-    if (exp == 0) {
-        // zero or subnormal
-        if (mant == 0) {
-            uint32_t bits = sign;
-            return *reinterpret_cast<float*>(&bits);
-        }
-        // normalize subnormal
-        while ((mant & 0x0400u) == 0) {
-            mant <<= 1;
-            exp--;
-        }
-        exp++;
-        mant &= ~0x0400u;
-    }
-    else if (exp == 0x1F) {
-        // Inf or NaN
-        uint32_t bits = sign | 0x7F800000u | (mant << 13);
-        return *reinterpret_cast<float*>(&bits);
-    }
-
-    // adjust exponent (half bias=15, float bias=127)
-    exp = exp + (127 - 15);
-    uint32_t bits = sign | (exp << 23) | (mant << 13);
-    return *reinterpret_cast<float*>(&bits);
-}
-
-jfloatArray knn_jni::commons::simdFp16ToFp32(
-    knn_jni::JNIUtilInterface* jniUtil,
-    JNIEnv*                   env,
-    jbyteArray                halfFloatBytes)
-{
-    // 1) Validate input length
-    jsize byteLength = jniUtil->GetJavaBytesArrayLength(env, halfFloatBytes);
-    if (byteLength <= 0 || (byteLength % 2) != 0) {
-        jniUtil->ThrowJavaException(
-            env,
-            "java/lang/IllegalArgumentException",
-            "Byte array length must be even (2 bytes per FP16 value)");
-        return nullptr;
-    }
-    jsize count = byteLength / 2;
-
-    // 2) Allocate output float array
-    jfloatArray fp32Array = env->NewFloatArray(count);
-    if (!fp32Array) {
-        jniUtil->ThrowJavaException(
-            env,
-            "java/lang/RuntimeException",
-            "Failed to allocate output float array");
-        return nullptr;
-    }
-
-    // 3) Pin both arrays
-    jbyte*  fp16_bytes  = reinterpret_cast<jbyte*>(
-        env->GetPrimitiveArrayCritical(halfFloatBytes, nullptr));
+    // Pin Java arrays
+    jbyte* fp16_bytes = reinterpret_cast<jbyte*>(
+            env->GetPrimitiveArrayCritical(fp16Array, nullptr));
     jfloat* fp32_floats = reinterpret_cast<jfloat*>(
-        env->GetPrimitiveArrayCritical(fp32Array, nullptr));
+            env->GetPrimitiveArrayCritical(fp32Array, nullptr));
 
-    if (!fp16_bytes || !fp32_floats) {
-        if (fp16_bytes)
-            env->ReleasePrimitiveArrayCritical(
-                halfFloatBytes, fp16_bytes, JNI_ABORT);
-        if (fp32_floats)
-            env->ReleasePrimitiveArrayCritical(
-                fp32Array,    fp32_floats,  0);
-        jniUtil->ThrowJavaException(
-            env,
-            "java/lang/RuntimeException",
-            "Failed to access array memory");
-        return nullptr;
+    const __fp16* src = reinterpret_cast<const __fp16*>(fp16_bytes);
+    float* dst = fp32_floats;
+
+    int vec_count = (count / 4) * 4;
+
+    for (int i = 0; i < count; i += 4) {
+        float16x4_t h = vld1_f16(src + i);
+        float32x4_t f = vcvt_f32_f16(h);
+        vst1q_f32(dst + i, f);
     }
 
-    // 4) SIMD or scalar conversion
-#if defined(__aarch64__)
-    {
-        const __fp16* src = reinterpret_cast<const __fp16*>(fp16_bytes);
-        float*        dst = reinterpret_cast<float*>(fp32_floats);
-        int i = 0;
-        for (; i + 4 <= count; i += 4) {
-            float16x4_t h = vld1_f16(src + i);
-            float32x4_t f = vcvt_f32_f16(h);
-            vst1q_f32(dst + i, f);
-        }
-        // scalar tail
-        const uint16_t* halfSrc = reinterpret_cast<const uint16_t*>(fp16_bytes);
-        for (; i < count; ++i) {
-            dst[i] = fp16_ieee_to_fp32(halfSrc[i]);
-        }
+    // Handle any remaining 1–3 elements scalar‐wise
+    for (int i = vec_count; i < count; ++i) {
+        dst[i] = static_cast<float>(src[i]);
     }
 
-#elif defined(__AVX512FP16__)
-    {
-        const __fp16* src = reinterpret_cast<const __fp16*>(fp16_bytes);
-        float*        dst = reinterpret_cast<float*>(fp32_floats);
-        int i = 0;
-        for (; i + 16 <= count; i += 16) {
-            __m256h h = _mm256_loadu_ph(src + i);
-            __m512  f = _mm512_cvtph_ps(h);
-            _mm512_storeu_ps(dst + i, f);
-        }
-        // scalar tail
-        const uint16_t* halfSrc = reinterpret_cast<const uint16_t*>(fp16_bytes);
-        for (; i < count; ++i) {
-            dst[i] = fp16_ieee_to_fp32(halfSrc[i]);
-        }
-    }
-#endif
-
-    // 5) Release and return
-    env->ReleasePrimitiveArrayCritical(halfFloatBytes, fp16_bytes, JNI_ABORT);
-    env->ReleasePrimitiveArrayCritical(fp32Array,    fp32_floats,  0);
-    return fp32Array;
+    env->ReleasePrimitiveArrayCritical(fp16Array, fp16_bytes, JNI_ABORT);
+    env->ReleasePrimitiveArrayCritical(fp32Array, fp32_floats, 0);
 }

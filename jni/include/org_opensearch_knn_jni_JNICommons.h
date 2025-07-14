@@ -76,11 +76,11 @@ JNIEXPORT jfloatArray JNICALL Java_org_opensearch_knn_jni_JNICommons_bytesToFloa
 
 /*
  * Class:     org_opensearch_knn_jni_JNICommons
- * Method:    simdFp16ToFp32
- * Signature: ([B)[F
+ * Method:    convertFP16ToFP32
+ * Signature: ([B[FI)V
  */
-JNIEXPORT jfloatArray JNICALL Java_org_opensearch_knn_jni_JNICommons_simdFp16ToFp32
-  (JNIEnv *, jclass, jbyteArray);
+JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_JNICommons_convertFP16ToFP32
+  (JNIEnv *, jclass, jbyteArray, jfloatArray, jint);
 
 #ifdef __cplusplus
 }

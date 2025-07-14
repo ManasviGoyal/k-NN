@@ -114,12 +114,16 @@ JNIEXPORT jfloatArray JNICALL Java_org_opensearch_knn_jni_JNICommons_bytesToFloa
     return nullptr;
 }
 
-JNIEXPORT jfloatArray JNICALL Java_org_opensearch_knn_jni_JNICommons_simdFp16ToFp32(JNIEnv *env, jclass cls, jbyteArray halfFloatBytes)
+JNIEXPORT void JNICALL
+Java_org_opensearch_knn_jni_JNICommons_convertFP16ToFP32
+  (JNIEnv *env, jclass cls,
+   jbyteArray fp16Array,
+   jfloatArray fp32Array,
+   jint count)
 {
     try {
-        return knn_jni::commons::simdFp16ToFp32(&jniUtil, env, halfFloatBytes);
+        knn_jni::commons::convertFP16ToFP32(env, fp16Array, fp32Array, count);
     } catch (...) {
         jniUtil.CatchCppExceptionAndThrowJava(env);
     }
-    return nullptr;
 }

@@ -49,9 +49,16 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer implements KNNVectorSer
         if (bytesRef == null || bytesRef.length % BYTES_IN_HALF_FLOAT != 0) {
             throw new IllegalArgumentException("Byte stream cannot be deserialized to array of half-floats");
         }
+
         byte[] halfFloatBytes = new byte[bytesRef.length];
         System.arraycopy(bytesRef.bytes, bytesRef.offset, halfFloatBytes, 0, bytesRef.length);
-        return JNICommons.simdFp16ToFp32(halfFloatBytes);
+
+        int count = halfFloatBytes.length / 2;
+        float[] floatArray = new float[count];
+
+        JNICommons.convertFP16ToFP32(halfFloatBytes, floatArray, count);
+
+        return floatArray;
     }
 
     /**
