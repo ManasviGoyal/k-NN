@@ -188,7 +188,8 @@ jfloatArray knn_jni::commons::bytesToFloatArray(knn_jni::JNIUtilInterface *jniUt
     return result;
 }
 
-void knn_jni::commons::convertFP16ToFP32(JNIEnv* env,
+void knn_jni::commons::convertFP16ToFP32(knn_jni::JNIUtilInterface *jniUtil,
+                                        JNIEnv* env,
                                         jbyteArray fp16Array,
                                         jfloatArray fp32Array,
                                         jint count) {
@@ -218,4 +219,39 @@ void knn_jni::commons::convertFP16ToFP32(JNIEnv* env,
 
     env->ReleasePrimitiveArrayCritical(fp16Array, fp16_bytes, JNI_ABORT);
     env->ReleasePrimitiveArrayCritical(fp32Array, fp32_floats, 0);
+}
+
+void knn_jni::commons::convertFP32ToFP16(knn_jni::JNIUtilInterface *jniUtil,
+                                         JNIEnv* env,
+                                         jfloatArray fp32Array,
+                                         jbyteArray fp16Array,
+                                         jint count) {
+    if (count <= 0) return;
+
+    // Pin Java arrays
+    jfloat* src_f32   = reinterpret_cast<jfloat*>(
+        env->GetPrimitiveArrayCritical(fp32Array, nullptr));
+    jbyte* dst_bytes = reinterpret_cast<jbyte*>(
+        env->GetPrimitiveArrayCritical(fp16Array, nullptr));
+
+    const float* src = reinterpret_cast<const float*>(src_f32);
+    __fp16* dst = reinterpret_cast<__fp16*>(dst_bytes);
+
+    int i = 0;
+    // SIMD encode 4 floats at a time
+    for (; i + 4 <= count; i += 4) {
+        float32x4_t v_f32 = vld1q_f32(src + i);
+        float16x4_t v_f16 = vcvt_f16_f32(v_f32);
+        vst1_f16(dst + i, v_f16);  // store 4 half-words natively
+    }
+    // tail: 1–3 scalars
+    for (; i < count; ++i) {
+        float16x4_t tmp = vcvt_f16_f32(vdup_n_f32(src[i]));
+        // extract lane 0
+        __fp16 h = vget_lane_f16(tmp, 0);
+        dst[i] = h;
+    }
+
+    env->ReleasePrimitiveArrayCritical(fp32Array, src_f32, JNI_ABORT);
+    env->ReleasePrimitiveArrayCritical(fp16Array, dst_bytes, 0);
 }

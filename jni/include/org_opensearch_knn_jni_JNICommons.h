@@ -74,6 +74,14 @@ JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_JNICommons_freeByteVectorData
 JNIEXPORT jfloatArray JNICALL Java_org_opensearch_knn_jni_JNICommons_bytesToFloatArray
   (JNIEnv *, jclass, jbyteArray);
 
+
+/* Class:     org_opensearch_knn_jni_JNICommons
+ * Method:    convertFP16ToFP32
+ * Signature: ([F[BI)V
+ */
+JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_JNICommons_convertFP32ToFP16
+  (JNIEnv *, jclass, jfloatArray, jbyteArray, jint);
+
 /*
  * Class:     org_opensearch_knn_jni_JNICommons
  * Method:    convertFP16ToFP32

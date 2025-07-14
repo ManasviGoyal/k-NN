@@ -31,11 +31,18 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer implements KNNVectorSer
      */
     @Override
     public byte[] floatToByteArray(float[] input) {
-        final ByteBuffer bb = ByteBuffer.allocate(input.length * BYTES_IN_HALF_FLOAT).order(ByteOrder.BIG_ENDIAN);
-        IntStream.range(0, input.length).forEach(index -> bb.putShort(Float.floatToFloat16(input[index])));
-        byte[] bytes = new byte[bb.flip().limit()];
-        bb.get(bytes);
-        return bytes;
+        if (input == null) {
+            throw new IllegalArgumentException("Input float array must not be null");
+        }
+        int count = input.length;
+        if (count == 0) {
+            return new byte[0];
+        }
+        byte[] halfFloats = new byte[count * 2];
+
+        JNICommons.convertFP32ToFP16(input, halfFloats, count);
+
+        return halfFloats;
     }
 
     /**
