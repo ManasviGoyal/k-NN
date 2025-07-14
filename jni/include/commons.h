@@ -105,11 +105,11 @@ namespace knn_jni {
         jfloatArray bytesToFloatArray(knn_jni::JNIUtilInterface *, JNIEnv *, jbyteArray halfFloatBytes);
 
         void convertFP32ToFP16(
-            JNIEnv *, jfloatArray fp32Array, jbyteArray fp16Array, jint count
+            knn_jni::JNIUtilInterface *, JNIEnv *, jfloatArray fp32Array, jbyteArray fp16Array, jint count
         );
 
         void convertFP16ToFP32(
-            JNIEnv *, jbyteArray fp16Array, jfloatArray fp32Array, jint count
+            knn_jni::JNIUtilInterface *, JNIEnv *, jbyteArray fp16Array, jfloatArray fp32Array, jint count
         );
     }
 }
