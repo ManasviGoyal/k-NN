@@ -195,29 +195,25 @@ void knn_jni::commons::convertFP16ToFP32(knn_jni::JNIUtilInterface *jniUtil,
                                         jint count) {
     if (count <= 0) return;
 
-    // Pin Java arrays
-    jbyte* fp16_bytes = reinterpret_cast<jbyte*>(
-            env->GetPrimitiveArrayCritical(fp16Array, nullptr));
-    jfloat* fp32_floats = reinterpret_cast<jfloat*>(
-            env->GetPrimitiveArrayCritical(fp32Array, nullptr));
+    jbyte*   fp16_bytes  = (jbyte*) env->GetPrimitiveArrayCritical(fp16Array, nullptr);
+    jfloat*  fp32_floats = (jfloat*) env->GetPrimitiveArrayCritical(fp32Array, nullptr);
 
-    const __fp16* src = reinterpret_cast<const __fp16*>(fp16_bytes);
+    const __fp16* src = (const __fp16*) fp16_bytes;
     float* dst = fp32_floats;
 
     int vec_count = (count / 4) * 4;
 
-    for (int i = 0; i < count; i += 4) {
+    for (int i = 0; i < vec_count; i += 4) {
         float16x4_t h = vld1_f16(src + i);
         float32x4_t f = vcvt_f32_f16(h);
         vst1q_f32(dst + i, f);
     }
 
-    // Handle any remaining 1–3 elements scalar‐wise
     for (int i = vec_count; i < count; ++i) {
         dst[i] = static_cast<float>(src[i]);
     }
 
-    env->ReleasePrimitiveArrayCritical(fp16Array, fp16_bytes, JNI_ABORT);
+    env->ReleasePrimitiveArrayCritical(fp16Array,  fp16_bytes,  JNI_ABORT);
     env->ReleasePrimitiveArrayCritical(fp32Array, fp32_floats, 0);
 }
 
@@ -228,28 +224,27 @@ void knn_jni::commons::convertFP32ToFP16(knn_jni::JNIUtilInterface *jniUtil,
                                          jint count) {
     if (count <= 0) return;
 
-    jfloat* src_f32 = reinterpret_cast<jfloat*>(
-        env->GetPrimitiveArrayCritical(fp32Array, nullptr));
-    jbyte* dst_bytes = reinterpret_cast<jbyte*>(
-        env->GetPrimitiveArrayCritical(fp16Array, nullptr));
+    jfloat* src_f32   = (jfloat*) env->GetPrimitiveArrayCritical(fp32Array, nullptr);
+    jbyte*  dst_bytes = (jbyte*)  env->GetPrimitiveArrayCritical(fp16Array, nullptr);
 
-    const float* src = reinterpret_cast<const float*>(src_f32);
-    __fp16*      dst = reinterpret_cast<__fp16*>(dst_bytes);
+    const float* src = (const float*) src_f32;
+    __fp16*      dst = (__fp16*)      dst_bytes;
 
     int i = 0;
-    // Main SIMD loop: 4 floats -> 4 halfs
+    // SIMD
     for (; i + 4 <= count; i += 4) {
         float32x4_t v_f32 = vld1q_f32(src + i);
         float16x4_t v_f16 = vcvt_f16_f32(v_f32);
         vst1_f16(dst + i, v_f16);
     }
-    // Scalar tail for leftover 1–3 elements
+    // Tail
     for (; i < count; ++i) {
-        // duplicate single float into a 4-lane vector, convert, then extract lane 0
         float16x4_t tmp = vcvt_f16_f32(vdupq_n_f32(src[i]));
-        dst[i] = vgetq_lane_f16(tmp, 0);
+        __fp16      h   = vget_lane_f16(tmp, 0);
+        dst[i] = h;
     }
 
     env->ReleasePrimitiveArrayCritical(fp32Array,  src_f32,   JNI_ABORT);
     env->ReleasePrimitiveArrayCritical(fp16Array, dst_bytes, 0);
 }
+
