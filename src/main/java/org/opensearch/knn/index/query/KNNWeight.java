@@ -52,7 +52,7 @@ import static org.opensearch.knn.common.KNNConstants.SPACE_TYPE;
 import static org.opensearch.knn.common.KNNConstants.VECTOR_DATA_TYPE_FIELD;
 
 /**
- * {@link KNNWeight} serves as a template for implementing approximate nearest neighbor (ANN)
+ * {@link 44KNNWeight} serves as a template for implementing approximate nearest neighbor (ANN)
  * and radius search over a native index type, such as Faiss.
  * <p>
  * It encapsulates shared logic such as quantization, extracting relevant search information,
@@ -337,7 +337,7 @@ public abstract class KNNWeight extends Weight {
         // See whether we have to perform exact search based on approx search results
         // This is required if there are no native engine files or if approximate search returned
         // results less than K, though we have more than k filtered docs
-        if (isExactSearchRequire(context, cardinality, topDocs.scoreDocs.length)) {
+        if (true || isExactSearchRequire(context, cardinality, topDocs.scoreDocs.length)) {
             final BitSetIterator docs = filterWeight != null ? new BitSetIterator(filterBitSet, cardinality) : null;
             TopDocs result = doExactSearch(context, docs, cardinality, k);
             return new PerLeafResult(filterWeight == null ? null : filterBitSet, result);
