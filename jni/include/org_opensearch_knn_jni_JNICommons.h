@@ -88,7 +88,7 @@ JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_JNICommons_convertFP32ToFP16
  * Signature: ([B[FI)V
  */
 JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_JNICommons_convertFP16ToFP32
-  (JNIEnv *, jclass, jbyteArray, jfloatArray, jint);
+  (JNIEnv *, jclass, jbyteArray, jfloatArray, jint, jint);
 
 #ifdef __cplusplus
 }

@@ -213,5 +213,5 @@ public class JNICommons {
      * @param fp32Array float array to fill with the converted float32 values
      * @param count number of half-float values to convert
      */
-    public static native void convertFP16ToFP32(byte[] fp16Array, float[] fp32Array, int count);
+    public static native void convertFP16ToFP32(byte[] fp16Array, float[] fp32Array, int count, int offsetsInBytes);
 }

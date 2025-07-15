@@ -135,10 +135,11 @@ Java_org_opensearch_knn_jni_JNICommons_convertFP16ToFP32
    jclass cls,
    jbyteArray fp16Array,
    jfloatArray fp32Array,
-   jint count)
+   jint count,
+   jint offsetsInBytes)
 {
     try {
-        knn_jni::commons::convertFP16ToFP32(&jniUtil, env, fp16Array, fp32Array, count);
+        knn_jni::commons::convertFP16ToFP32(&jniUtil, env, fp16Array, fp32Array, count, offsetsInBytes);
     } catch (...) {
         jniUtil.CatchCppExceptionAndThrowJava(env);
     }

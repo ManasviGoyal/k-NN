@@ -192,13 +192,16 @@ void knn_jni::commons::convertFP16ToFP32(knn_jni::JNIUtilInterface *jniUtil,
                                         JNIEnv* env,
                                         jbyteArray fp16Array,
                                         jfloatArray fp32Array,
-                                        jint count) {
+                                        jint count,
+                                        jint offsetsInBytes) {
     if (count <= 0) return;
 
-    jbyte*   fp16_bytes  = (jbyte*) env->GetPrimitiveArrayCritical(fp16Array, nullptr);
+    jbyte * fp16_bytes = (jbyte*) env->GetPrimitiveArrayCritical(fp16Array, nullptr);
+    const __fp16* src = (const __fp16*) (fp16_bytes + offsetsInBytes);
+    // jbyte*   fp16_bytes  = (jbyte*) env->GetPrimitiveArrayCritical(fp16Array, nullptr);
     jfloat*  fp32_floats = (jfloat*) env->GetPrimitiveArrayCritical(fp32Array, nullptr);
 
-    const __fp16* src = (const __fp16*) fp16_bytes;
+    // const __fp16* src = (const __fp16*) fp16_bytes;
     float* dst = fp32_floats;
 
     int vec_count = (count / 4) * 4;

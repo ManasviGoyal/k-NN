@@ -20,6 +20,8 @@ import java.util.stream.IntStream;
  */
 public class KNNVectorAsCollectionOfHalfFloatsSerializer implements KNNVectorSerializer {
     private static final int BYTES_IN_HALF_FLOAT = 2;
+    private static final byte[] BYTE_BUFFER = new byte[4 * 768];
+    private static final float[] FLOAT_BUFFER = new float[768];
 
     public static final KNNVectorAsCollectionOfHalfFloatsSerializer INSTANCE = new KNNVectorAsCollectionOfHalfFloatsSerializer();
 
@@ -57,15 +59,15 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer implements KNNVectorSer
             throw new IllegalArgumentException("Byte stream cannot be deserialized to array of half-floats");
         }
 
-        byte[] halfFloatBytes = new byte[bytesRef.length];
-        System.arraycopy(bytesRef.bytes, bytesRef.offset, halfFloatBytes, 0, bytesRef.length);
+        // byte[] halfFloatBytes = new byte[bytesRef.length];
+        // System.arraycopy(bytesRef.bytes, bytesRef.offset, BYTE_BUFFER, 0, bytesRef.length);
 
-        int count = halfFloatBytes.length / 2;
-        float[] floatArray = new float[count];
+        int count = BYTE_BUFFER.length / 2;
+        // float[] floatArray = new float[count];
 
-        JNICommons.convertFP16ToFP32(halfFloatBytes, floatArray, count);
+        JNICommons.convertFP16ToFP32(BYTE_BUFFER, FLOAT_BUFFER, count, bytesRef.offset);
 
-        return floatArray;
+        return FLOAT_BUFFER;
     }
 
     /**

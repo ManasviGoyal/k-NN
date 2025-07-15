@@ -109,7 +109,7 @@ namespace knn_jni {
         );
 
         void convertFP16ToFP32(
-            knn_jni::JNIUtilInterface *, JNIEnv *, jbyteArray fp16Array, jfloatArray fp32Array, jint count
+            knn_jni::JNIUtilInterface *, JNIEnv *, jbyteArray fp16Array, jfloatArray fp32Array, jint count, jint offsetsInBytes
         );
     }
 }
