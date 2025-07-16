@@ -87,10 +87,7 @@ public enum VectorDataType {
 
         @Override
         public FieldType createKnnVectorFieldType(int dimension, KNNVectorSimilarityFunction knnVectorSimilarityFunction) {
-            FieldType type = new FieldType();
-            type.setDimensions(dimension, 2);
-            type.freeze();
-            return type;
+            return KnnFloatVectorField.createFieldType(dimension, knnVectorSimilarityFunction.getVectorSimilarityFunction());
         }
 
         @Override
