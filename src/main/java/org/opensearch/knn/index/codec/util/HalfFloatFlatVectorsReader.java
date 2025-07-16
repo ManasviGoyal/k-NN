@@ -42,7 +42,6 @@ import org.apache.lucene.util.hnsw.RandomVectorScorer;
  * A FlatVectorsReader that reads half-precision (2-byte) FP16 data from .vec files,
  * decodes to float32 via the KNN serializer, and otherwise follows Lucene99 logic.
  */
- */
 public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
     private static final long SHALLOW_SIZE =
             RamUsageEstimator.shallowSizeOfInstance(HalfFloatFlatVectorsReader.class);
