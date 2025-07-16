@@ -5,23 +5,17 @@
 
 package org.opensearch.knn.index.codec.util;
 
-import static org.apache.lucene.search.DocIdSetIterator.NO_MORE_DOCS;
 import static org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsReader.readSimilarityFunction;
 import static org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsReader.readVectorEncoding;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.util.Map;
 
 import org.apache.lucene.codecs.CodecUtil;
 import org.apache.lucene.codecs.hnsw.FlatVectorsReader;
 import org.apache.lucene.codecs.hnsw.FlatVectorsScorer;
-import org.apache.lucene.codecs.lucene95.OffHeapByteVectorValues;
 import org.apache.lucene.codecs.lucene95.OffHeapFloatVectorValues;
 import org.apache.lucene.codecs.lucene95.OrdToDocDISIReaderConfiguration;
-import org.apache.lucene.codecs.lucene99.Lucene99FlatVectorsReader;
 import org.apache.lucene.index.ByteVectorValues;
 import org.apache.lucene.index.CorruptIndexException;
 import org.apache.lucene.index.FieldInfo;
@@ -48,45 +42,45 @@ import org.apache.lucene.util.hnsw.RandomVectorScorer;
  * decodes to float32 via the KNN serializer, and otherwise follows Lucene99 logic.
  */
 public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
-    private static final long SHALLOW_SIZE =
-            RamUsageEstimator.shallowSizeOfInstance(HalfFloatFlatVectorsReader.class);
+    private static final long SHALLOW_SIZE = RamUsageEstimator.shallowSizeOfInstance(HalfFloatFlatVectorsReader.class);
 
     private final IntObjectHashMap<FieldEntry> fields = new IntObjectHashMap<>();
     private final IndexInput vectorData;
     private final FieldInfos fieldInfos;
 
-    public HalfFloatFlatVectorsReader(SegmentReadState state, FlatVectorsScorer scorer)
-            throws IOException {
+    public HalfFloatFlatVectorsReader(SegmentReadState state, FlatVectorsScorer scorer) throws IOException {
         super(scorer);
         int versionMeta = readMetadata(state);
         this.fieldInfos = state.fieldInfos;
-        vectorData =
-                openDataInput(
-                        state,
-                        versionMeta,
-                        HalfFloatFlatVectorsFormat.VECTOR_DATA_EXTENSION,
-                        HalfFloatFlatVectorsFormat.VECTOR_DATA_CODEC_NAME,
-                        // Flat formats are used to randomly access vectors from their node ID that is stored
-                        // in the HNSW graph.
-                        state.context);
+        vectorData = openDataInput(
+            state,
+            versionMeta,
+            HalfFloatFlatVectorsFormat.VECTOR_DATA_EXTENSION,
+            HalfFloatFlatVectorsFormat.VECTOR_DATA_CODEC_NAME,
+            // Flat formats are used to randomly access vectors from their node ID that is stored
+            // in the HNSW graph.
+            state.context
+        );
     }
 
     private int readMetadata(SegmentReadState state) throws IOException {
-        String metaFileName =
-                IndexFileNames.segmentFileName(
-                        state.segmentInfo.name, state.segmentSuffix, HalfFloatFlatVectorsFormat.META_EXTENSION);
+        String metaFileName = IndexFileNames.segmentFileName(
+            state.segmentInfo.name,
+            state.segmentSuffix,
+            HalfFloatFlatVectorsFormat.META_EXTENSION
+        );
         int versionMeta = -1;
         try (ChecksumIndexInput meta = state.directory.openChecksumInput(metaFileName)) {
             Throwable priorE = null;
             try {
-                versionMeta =
-                        CodecUtil.checkIndexHeader(
-                                meta,
-                                HalfFloatFlatVectorsFormat.META_CODEC_NAME,
-                                HalfFloatFlatVectorsFormat.VERSION_START,
-                                HalfFloatFlatVectorsFormat.VERSION_CURRENT,
-                                state.segmentInfo.getId(),
-                                state.segmentSuffix);
+                versionMeta = CodecUtil.checkIndexHeader(
+                    meta,
+                    HalfFloatFlatVectorsFormat.META_CODEC_NAME,
+                    HalfFloatFlatVectorsFormat.VERSION_START,
+                    HalfFloatFlatVectorsFormat.VERSION_CURRENT,
+                    state.segmentInfo.getId(),
+                    state.segmentSuffix
+                );
                 readFields(meta, state.fieldInfos);
             } catch (Throwable exception) {
                 priorE = exception;
@@ -98,33 +92,28 @@ public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
     }
 
     private static IndexInput openDataInput(
-            SegmentReadState state,
-            int versionMeta,
-            String fileExtension,
-            String codecName,
-            IOContext context)
-            throws IOException {
-        String fileName =
-                IndexFileNames.segmentFileName(state.segmentInfo.name, state.segmentSuffix, fileExtension);
+        SegmentReadState state,
+        int versionMeta,
+        String fileExtension,
+        String codecName,
+        IOContext context
+    ) throws IOException {
+        String fileName = IndexFileNames.segmentFileName(state.segmentInfo.name, state.segmentSuffix, fileExtension);
         IndexInput in = state.directory.openInput(fileName, context);
         try {
-            int versionVectorData =
-                    CodecUtil.checkIndexHeader(
-                            in,
-                            codecName,
-                            HalfFloatFlatVectorsFormat.VERSION_START,
-                            HalfFloatFlatVectorsFormat.VERSION_CURRENT,
-                            state.segmentInfo.getId(),
-                            state.segmentSuffix);
+            int versionVectorData = CodecUtil.checkIndexHeader(
+                in,
+                codecName,
+                HalfFloatFlatVectorsFormat.VERSION_START,
+                HalfFloatFlatVectorsFormat.VERSION_CURRENT,
+                state.segmentInfo.getId(),
+                state.segmentSuffix
+            );
             if (versionMeta != versionVectorData) {
                 throw new CorruptIndexException(
-                        "Format versions mismatch: meta="
-                                + versionMeta
-                                + ", "
-                                + codecName
-                                + "="
-                                + versionVectorData,
-                        in);
+                    "Format versions mismatch: meta=" + versionMeta + ", " + codecName + "=" + versionVectorData,
+                    in
+                );
             }
             CodecUtil.retrieveChecksum(in);
             return in;
@@ -176,8 +165,7 @@ public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
 
     @Override
     public ByteVectorValues getByteVectorValues(String field) throws IOException {
-        throw new UnsupportedOperationException(
-                "HalfFloatFlatVectorsReader does not support byte[] vector values");
+        throw new UnsupportedOperationException("HalfFloatFlatVectorsReader does not support byte[] vector values");
     }
 
     @Override
@@ -187,26 +175,46 @@ public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
 
         // 2) Load Lucene’s off-heap float reader for ord→doc, iterator(), etc.
         OffHeapFloatVectorValues base = OffHeapFloatVectorValues.load(
-                fe.similarityFunction,
-                vectorScorer,
-                fe.ordToDoc,
-                fe.vectorEncoding,       // still FLOAT32 in the metadata
-                fe.dimension,
-                fe.vectorDataOffset,
-                fe.vectorDataLength,
-                vectorData);
+            fe.similarityFunction,
+            vectorScorer,
+            fe.ordToDoc,
+            fe.vectorEncoding,       // still FLOAT32 in the metadata
+            fe.dimension,
+            fe.vectorDataOffset,
+            fe.vectorDataLength,
+            vectorData
+        );
 
         // 3) Compute how many bytes each FP16 vector occupies
-        final int dim   = fe.dimension;
+        final int dim = fe.dimension;
         final int byteS = dim * Short.BYTES;
 
         // 4) Return a FloatVectorValues that only overrides vectorValue() & copy()
         return new FloatVectorValues() {
-            @Override public int dimension()               { return dim; }
-            @Override public int size()                    { return base.size(); }
-            @Override public int ordToDoc(int ord)         { return base.ordToDoc(ord); }
-            @Override public Bits getAcceptOrds(Bits bits) { return base.getAcceptOrds(bits); }
-            @Override public DocIndexIterator iterator()   { return base.iterator(); }
+            @Override
+            public int dimension() {
+                return dim;
+            }
+
+            @Override
+            public int size() {
+                return base.size();
+            }
+
+            @Override
+            public int ordToDoc(int ord) {
+                return base.ordToDoc(ord);
+            }
+
+            @Override
+            public Bits getAcceptOrds(Bits bits) {
+                return base.getAcceptOrds(bits);
+            }
+
+            @Override
+            public DocIndexIterator iterator() {
+                return base.iterator();
+            }
 
             @Override
             public float[] vectorValue(int ord) throws IOException {
@@ -216,8 +224,7 @@ public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
                 byte[] half = new byte[byteS];
                 slice.readBytes(half, 0, half.length);
                 // decode FP16→FP32
-                return KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE
-                        .byteToFloatArray(new BytesRef(half));
+                return KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.byteToFloatArray(new BytesRef(half));
             }
 
             @Override
@@ -260,35 +267,25 @@ public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
         IOUtils.close(vectorData);
     }
 
-    private record FieldEntry(
-            VectorSimilarityFunction similarityFunction,
-            VectorEncoding vectorEncoding,
-            long vectorDataOffset,
-            long vectorDataLength,
-            int dimension,
-            int size,
-            OrdToDocDISIReaderConfiguration ordToDoc,
-            FieldInfo info) {
+    private record FieldEntry(VectorSimilarityFunction similarityFunction, VectorEncoding vectorEncoding, long vectorDataOffset,
+        long vectorDataLength, int dimension, int size, OrdToDocDISIReaderConfiguration ordToDoc, FieldInfo info) {
 
         FieldEntry {
             if (similarityFunction != info.getVectorSimilarityFunction()) {
                 throw new IllegalStateException(
-                        "Inconsistent vector similarity function for field=\""
-                                + info.name
-                                + "\"; "
-                                + similarityFunction
-                                + " != "
-                                + info.getVectorSimilarityFunction());
+                    "Inconsistent vector similarity function for field=\""
+                        + info.name
+                        + "\"; "
+                        + similarityFunction
+                        + " != "
+                        + info.getVectorSimilarityFunction()
+                );
             }
             int infoVectorDimension = info.getVectorDimension();
             if (infoVectorDimension != dimension) {
                 throw new IllegalStateException(
-                        "Inconsistent vector dimension for field=\""
-                                + info.name
-                                + "\"; "
-                                + infoVectorDimension
-                                + " != "
-                                + dimension);
+                    "Inconsistent vector dimension for field=\"" + info.name + "\"; " + infoVectorDimension + " != " + dimension
+                );
             }
 
             int byteSize = Short.BYTES;
@@ -296,16 +293,17 @@ public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
             long numBytes = Math.multiplyExact(vectorBytes, size);
             if (numBytes != vectorDataLength) {
                 throw new IllegalStateException(
-                        "Vector data length "
-                                + vectorDataLength
-                                + " not matching size="
-                                + size
-                                + " * dim="
-                                + dimension
-                                + " * byteSize="
-                                + byteSize
-                                + " = "
-                                + numBytes);
+                    "Vector data length "
+                        + vectorDataLength
+                        + " not matching size="
+                        + size
+                        + " * dim="
+                        + dimension
+                        + " * byteSize="
+                        + byteSize
+                        + " = "
+                        + numBytes
+                );
             }
         }
 
@@ -317,15 +315,7 @@ public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
             final var dimension = input.readVInt();
             final var size = input.readInt();
             final var ordToDoc = OrdToDocDISIReaderConfiguration.fromStoredMeta(input, size);
-            return new FieldEntry(
-                    similarityFunction,
-                    vectorEncoding,
-                    vectorDataOffset,
-                    vectorDataLength,
-                    dimension,
-                    size,
-                    ordToDoc,
-                    info);
+            return new FieldEntry(similarityFunction, vectorEncoding, vectorDataOffset, vectorDataLength, dimension, size, ordToDoc, info);
         }
     }
 }
