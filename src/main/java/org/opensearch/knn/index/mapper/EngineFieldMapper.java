@@ -199,9 +199,6 @@ public class EngineFieldMapper extends KNNVectorFieldMapper {
             }
 
             if (useLuceneBasedVectorField) {
-                if (mappedFieldType.vectorDataType == VectorDataType.HALF_FLOAT) {
-                    throw new IllegalArgumentException("Lucene-based vector fields do not yet support HALF_FLOAT vector data type.");
-                }
                 int adjustedDimension = mappedFieldType.vectorDataType == VectorDataType.BINARY
                     ? knnMappingConfig.getDimension() / 8
                     : knnMappingConfig.getDimension();
