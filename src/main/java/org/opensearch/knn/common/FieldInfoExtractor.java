@@ -64,18 +64,11 @@ public class FieldInfoExtractor {
                 vectorDataTypeString = vectorDataType == null ? null : vectorDataType.getValue();
             } else if (fieldInfo.hasVectorValues()) {
                 vectorDataTypeString = fieldInfo.getVectorEncoding() == VectorEncoding.FLOAT32
-                    ? VectorDataType.FLOAT.toString()
-                    : VectorDataType.BYTE.toString();
+                        ? VectorDataType.FLOAT.toString()
+                        : VectorDataType.BYTE.toString();
             }
         }
-        VectorDataType result = StringUtils.isNotEmpty(vectorDataTypeString)
-            ? VectorDataType.get(vectorDataTypeString)
-            : VectorDataType.DEFAULT;
-        // VectorValues do not yet support HALF_FLOAT
-        if (fieldInfo.hasVectorValues() && result == VectorDataType.HALF_FLOAT) {
-            throw new IllegalArgumentException("VectorValues do not yet support fp16 (HALF_FLOAT) data type");
-        }
-        return result;
+        return StringUtils.isNotEmpty(vectorDataTypeString) ? VectorDataType.get(vectorDataTypeString) : VectorDataType.DEFAULT;
     }
 
     /**
@@ -113,7 +106,7 @@ public class FieldInfoExtractor {
             return SpaceType.getSpace(fieldInfo.getVectorSimilarityFunction());
         }
         throw new IllegalArgumentException(
-            String.format(Locale.ROOT, "Unable to find the Space Type from Field Info attribute for field %s", fieldInfo.getName())
+                String.format(Locale.ROOT, "Unable to find the Space Type from Field Info attribute for field %s", fieldInfo.getName())
         );
 
     }
