@@ -35,16 +35,6 @@ public interface VectorValueExtractorStrategy {
     }
 
     /**
-     * Extract a float vector from KNNVectorValuesIterator.
-     * @param iterator {@link KNNVectorValuesIterator}
-     * @return float[]
-     * @throws IOException exception while retrieving the vectors
-     */
-    static float[] extractHalfFloatVector(final KNNVectorValuesIterator iterator) throws IOException {
-        return iterator.getVectorExtractorStrategy().extract(VectorDataType.HALF_FLOAT, iterator);
-    }
-
-    /**
      * Extract a byte vector from KNNVectorValuesIterator.
      * @param iterator {@link KNNVectorValuesIterator}
      * @return byte[]
@@ -120,7 +110,7 @@ public interface VectorValueExtractorStrategy {
             }
             docIdsIteratorValues.setLastOrd(ord);
 
-            if (vectorDataType == VectorDataType.FLOAT) {
+            if (vectorDataType == VectorDataType.FLOAT || vectorDataType == VectorDataType.HALF_FLOAT) {
                 FloatVectorValues knnVectorValues = (FloatVectorValues) docIdsIteratorValues.getKnnVectorValues();
                 docIdsIteratorValues.setLastAccessedVector(knnVectorValues.vectorValue(ord));
             } else if (vectorDataType == VectorDataType.BYTE || vectorDataType == VectorDataType.BINARY) {
@@ -154,6 +144,7 @@ public interface VectorValueExtractorStrategy {
         public <T> T extract(final VectorDataType vectorDataType, final KNNVectorValuesIterator vectorValuesIterator) throws IOException {
             switch (vectorDataType) {
                 case FLOAT:
+                case HALF_FLOAT:
                     return (T) ((KNNVectorValuesIterator.FieldWriterIteratorValues<float[]>) vectorValuesIterator).vectorsValue();
                 case BYTE:
                 case BINARY:

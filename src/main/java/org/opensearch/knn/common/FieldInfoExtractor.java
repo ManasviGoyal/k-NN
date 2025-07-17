@@ -64,8 +64,8 @@ public class FieldInfoExtractor {
                 vectorDataTypeString = vectorDataType == null ? null : vectorDataType.getValue();
             } else if (fieldInfo.hasVectorValues()) {
                 vectorDataTypeString = fieldInfo.getVectorEncoding() == VectorEncoding.FLOAT32
-                        ? VectorDataType.FLOAT.toString()
-                        : VectorDataType.BYTE.toString();
+                    ? VectorDataType.FLOAT.toString()
+                    : VectorDataType.BYTE.toString();
             }
         }
         return StringUtils.isNotEmpty(vectorDataTypeString) ? VectorDataType.get(vectorDataTypeString) : VectorDataType.DEFAULT;
@@ -106,7 +106,7 @@ public class FieldInfoExtractor {
             return SpaceType.getSpace(fieldInfo.getVectorSimilarityFunction());
         }
         throw new IllegalArgumentException(
-                String.format(Locale.ROOT, "Unable to find the Space Type from Field Info attribute for field %s", fieldInfo.getName())
+            String.format(Locale.ROOT, "Unable to find the Space Type from Field Info attribute for field %s", fieldInfo.getName())
         );
 
     }
