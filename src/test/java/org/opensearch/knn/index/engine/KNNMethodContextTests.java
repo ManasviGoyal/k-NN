@@ -310,16 +310,10 @@ public class KNNMethodContextTests extends KNNTestCase {
 
     public void testValidateVectorDataType_whenHalfFloat_thenValid() {
         validateValidateVectorDataType(KNNEngine.LUCENE, KNNConstants.METHOD_HNSW, VectorDataType.HALF_FLOAT, SpaceType.L2, null);
+        validateValidateVectorDataType(KNNEngine.FAISS, KNNConstants.METHOD_HNSW, VectorDataType.HALF_FLOAT, SpaceType.L2, null);
     }
 
     public void testValidateVectorDataType_whenHalfFloat_thenException() {
-        validateValidateVectorDataType(
-            KNNEngine.FAISS,
-            KNNConstants.METHOD_HNSW,
-            VectorDataType.HALF_FLOAT,
-            SpaceType.L2,
-            "UnsupportedMethod"
-        );
         validateValidateVectorDataType(
             KNNEngine.NMSLIB,
             KNNConstants.METHOD_HNSW,
