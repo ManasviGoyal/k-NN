@@ -7,10 +7,7 @@ package org.opensearch.knn.index.codec.util;
 
 import org.apache.lucene.util.BytesRef;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.ShortBuffer;
-import java.util.stream.IntStream;
+import org.opensearch.knn.jni.JNICommons;
 
 /**
  * Class implements KNNVectorSerializer based on serialization/deserialization of float array
@@ -18,22 +15,38 @@ import java.util.stream.IntStream;
  */
 public class KNNVectorAsCollectionOfHalfFloatsSerializer implements KNNVectorSerializer {
     private static final int BYTES_IN_HALF_FLOAT = 2;
-
-    public static final KNNVectorAsCollectionOfHalfFloatsSerializer INSTANCE = new KNNVectorAsCollectionOfHalfFloatsSerializer();
+    private final int dimension;
+    private final byte[] bytesBuffer;
+    private final float[] floatBuffer;
 
     /**
-     * Converts a float array to a byte array using half-precision encoding.
+     * Constructs a serializer for vectors of the specified dimension.
      *
+     * @param dimension the expected length of all float[] vectors to serialize/deserialize
+     */
+    public KNNVectorAsCollectionOfHalfFloatsSerializer(int dimension) {
+        this.dimension = dimension;
+        this.bytesBuffer = new byte[dimension * BYTES_IN_HALF_FLOAT];
+        this.floatBuffer = new float[dimension];
+    }
+
+    /**
+     * Converts float[] to byte[] using JNI (FP32 to FP16).
      * @param input the float[] to be serialized into half-precision format
      * @return a byte[] containing the float16-encoded data
      */
     @Override
     public byte[] floatToByteArray(float[] input) {
-        final ByteBuffer bb = ByteBuffer.allocate(input.length * BYTES_IN_HALF_FLOAT).order(ByteOrder.BIG_ENDIAN);
-        IntStream.range(0, input.length).forEach(index -> bb.putShort(Float.floatToFloat16(input[index])));
-        byte[] bytes = new byte[bb.flip().limit()];
-        bb.get(bytes);
-        return bytes;
+        if (input == null) {
+            throw new IllegalArgumentException("Input float array is null. Cannot convert to FP16.");
+        }
+        if (input.length != dimension) {
+            throw new IllegalArgumentException(
+                "Input float array length (" + input.length + ") does not match expected dimension (" + dimension + ")."
+            );
+        }
+        JNICommons.convertFP32ToFP16(input, bytesBuffer, input.length);
+        return bytesBuffer;
     }
 
     /**
@@ -47,15 +60,44 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer implements KNNVectorSer
         if (bytesRef == null || bytesRef.length % BYTES_IN_HALF_FLOAT != 0) {
             throw new IllegalArgumentException("Byte stream cannot be deserialized to array of half-floats");
         }
-        final int sizeOfFloatArray = bytesRef.length / BYTES_IN_HALF_FLOAT;
-        final float[] vector = new float[sizeOfFloatArray];
 
-        ShortBuffer sb = ByteBuffer.wrap(bytesRef.bytes, bytesRef.offset, bytesRef.length).order(ByteOrder.BIG_ENDIAN).asShortBuffer();
-
-        for (int i = 0; i < sizeOfFloatArray; i++) {
-            vector[i] = Float.float16ToFloat(sb.get());
+        int count = bytesRef.length / BYTES_IN_HALF_FLOAT;
+        if (count != dimension) {
+            throw new IllegalArgumentException("Expected dimension " + dimension + " but got " + count);
         }
 
-        return vector;
+        JNICommons.convertFP16ToFP32(bytesRef.bytes, floatBuffer, count, bytesRef.offset);
+        return floatBuffer;
+    }
+
+    /**
+     * Converts byte[] to float[] using JNI (FP16 to FP32).
+     * @param input the byte[] containing half-precision encoded data
+     * @return a float[] containing the decoded float32 values
+     */
+    public float[] byteToFloatArray(byte[] input) {
+        if (input == null) {
+            throw new IllegalArgumentException("Input byte array is null. Cannot convert to FP32.");
+        }
+        if (input.length % BYTES_IN_HALF_FLOAT != 0) {
+            throw new IllegalArgumentException(
+                "Invalid byte array length ("
+                    + input.length
+                    + "). Must be a multiple of "
+                    + BYTES_IN_HALF_FLOAT
+                    + " to represent float16 values."
+            );
+        }
+
+        int count = input.length / BYTES_IN_HALF_FLOAT;
+
+        if (count != dimension) {
+            throw new IllegalArgumentException(
+                "Input byte array contains " + count + " float16 values, but expected dimension is " + dimension + "."
+            );
+        }
+
+        JNICommons.convertFP16ToFP32(input, floatBuffer, count, 0);
+        return floatBuffer;
     }
 }

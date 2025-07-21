@@ -122,7 +122,9 @@ public class VectorDataTypeTests extends KNNTestCase {
         IndexWriterConfig conf = newIndexWriterConfig(new MockAnalyzer(random()));
         IndexWriter writer = new IndexWriter(directory, conf);
         Document knnDocument = new Document();
-        BytesRef bytesRef = new BytesRef(KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArray(SAMPLE_FLOAT_VECTOR_DATA));
+        BytesRef bytesRef = new BytesRef(
+            new KNNVectorAsCollectionOfHalfFloatsSerializer(SAMPLE_FLOAT_VECTOR_DATA.length).floatToByteArray(SAMPLE_FLOAT_VECTOR_DATA)
+        );
         knnDocument.add(new BinaryDocValuesField(MOCK_HALF_FLOAT_INDEX_FIELD_NAME, bytesRef));
         writer.addDocument(knnDocument);
         writer.commit();

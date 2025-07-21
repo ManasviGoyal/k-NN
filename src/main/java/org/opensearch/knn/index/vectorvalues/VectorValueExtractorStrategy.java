@@ -129,7 +129,8 @@ public interface VectorValueExtractorStrategy {
         }
 
         private float[] getHalfFloatVectorFromByteRef(final BytesRef bytesRef) {
-            final KNNVectorSerializer vectorSerializer = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;
+            int dimension = bytesRef.length / 2;
+            KNNVectorAsCollectionOfHalfFloatsSerializer vectorSerializer = new KNNVectorAsCollectionOfHalfFloatsSerializer(dimension);
             return vectorSerializer.byteToFloatArray(bytesRef);
         }
     }

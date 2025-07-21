@@ -398,7 +398,7 @@ public class TestVectorValues {
 
         public RandomHalfFloatVectorBinaryDocValues(int count, int dimension) {
             super(count, dimension);
-            this.knnVectorSerializer = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;
+            this.knnVectorSerializer = new KNNVectorAsCollectionOfHalfFloatsSerializer(dimension);
         }
 
         @Override
@@ -415,7 +415,7 @@ public class TestVectorValues {
             super(count, dimension);
             float[] array = new float[dimension];
             Arrays.fill(array, value);
-            this.knnVectorSerializer = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;
+            this.knnVectorSerializer = new KNNVectorAsCollectionOfHalfFloatsSerializer(dimension);
             this.value = new BytesRef(knnVectorSerializer.floatToByteArray(array));
         }
 
@@ -431,7 +431,7 @@ public class TestVectorValues {
         public PredefinedHalfFloatVectorBinaryDocValues(final List<float[]> vectors) {
             super(vectors.size(), vectors.get(0).length);
             this.vectors = vectors;
-            this.knnVectorSerializer = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;
+            this.knnVectorSerializer = new KNNVectorAsCollectionOfHalfFloatsSerializer(dimension);
         }
 
         @Override

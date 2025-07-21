@@ -75,7 +75,8 @@ public class KNNVectorFieldMapperUtil {
      * @param vector vector to be added to stored field
      */
     public static StoredField createStoredFieldForHalfFloatVector(String name, float[] vector) {
-        return new StoredField(name, KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArray(vector));
+        KNNVectorAsCollectionOfHalfFloatsSerializer vectorSerializer = new KNNVectorAsCollectionOfHalfFloatsSerializer(vector.length);
+        return new StoredField(name, vectorSerializer.floatToByteArray(vector));
     }
 
     /**

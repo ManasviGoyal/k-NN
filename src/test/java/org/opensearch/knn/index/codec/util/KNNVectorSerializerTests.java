@@ -57,7 +57,7 @@ public class KNNVectorSerializerTests extends KNNTestCase {
     public void testHalfFloatVectorSerializer_whenVectorBytesOffset_thenSuccess() {
         final float[] vector = getArrayOfRandomFloats(20);
         int offset = randomInt(4);
-        final KNNVectorSerializer vectorSerializer = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;
+        final KNNVectorSerializer vectorSerializer = new KNNVectorAsCollectionOfHalfFloatsSerializer(vector.length);
         assertNotNull(vectorSerializer);
         byte[] bytes = vectorSerializer.floatToByteArray(vector);
         byte[] bytesWithOffset = new byte[bytes.length + 2 * offset];

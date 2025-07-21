@@ -32,7 +32,6 @@ import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.ReadAdvice;
 import org.apache.lucene.util.Bits;
-import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.RamUsageEstimator;
 import org.apache.lucene.util.hnsw.RandomVectorScorer;
@@ -170,10 +169,8 @@ public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
 
     @Override
     public FloatVectorValues getFloatVectorValues(String field) throws IOException {
-        // 1) Lookup our per-field metadata
         final FieldEntry fe = getFieldEntryOrThrow(field);
 
-        // 2) Load Lucene’s off-heap float reader for ord→doc, iterator(), etc.
         OffHeapFloatVectorValues base = OffHeapFloatVectorValues.load(
             fe.similarityFunction,
             vectorScorer,
@@ -185,11 +182,10 @@ public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
             vectorData
         );
 
-        // 3) Compute how many bytes each FP16 vector occupies
         final int dim = fe.dimension;
-        final int byteS = dim * Short.BYTES;
+        final int byteSize = dim * Short.BYTES;
+        final KNNVectorAsCollectionOfHalfFloatsSerializer vectorSerializer = new KNNVectorAsCollectionOfHalfFloatsSerializer(dim);
 
-        // 4) Return a FloatVectorValues that only overrides vectorValue() & copy()
         return new FloatVectorValues() {
             @Override
             public int dimension() {
@@ -218,24 +214,20 @@ public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
 
             @Override
             public float[] vectorValue(int ord) throws IOException {
-                // seek into the half-float slice and read dim*2 bytes
                 IndexInput slice = base.getSlice();
-                slice.seek((long) ord * byteS);
-                byte[] half = new byte[byteS];
+                slice.seek((long) ord * byteSize);
+                byte[] half = new byte[byteSize];
                 slice.readBytes(half, 0, half.length);
-                // decode FP16→FP32
-                return KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.byteToFloatArray(new BytesRef(half));
+                return vectorSerializer.byteToFloatArray(half);
             }
 
             @Override
             public FloatVectorValues copy() {
-                // safe to reuse same instance: slice is immutable, state is stateless
                 return this;
             }
 
             @Override
             public VectorScorer scorer(float[] query) throws IOException {
-                // delegate back to Lucene’s built-in scorer
                 return base.scorer(query);
             }
         };
@@ -288,8 +280,8 @@ public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
                 );
             }
 
-            int byteSize = Short.BYTES;
-            long vectorBytes = Math.multiplyExact((long) infoVectorDimension, byteSize);
+            int byteSizeize = Short.BYTES;
+            long vectorBytes = Math.multiplyExact((long) infoVectorDimension, byteSizeize);
             long numBytes = Math.multiplyExact(vectorBytes, size);
             if (numBytes != vectorDataLength) {
                 throw new IllegalStateException(
@@ -299,8 +291,8 @@ public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
                         + size
                         + " * dim="
                         + dimension
-                        + " * byteSize="
-                        + byteSize
+                        + " * byteSizeize="
+                        + byteSizeize
                         + " = "
                         + numBytes
                 );

@@ -68,7 +68,10 @@ public class KNNVectorFieldMapperUtilTests extends KNNTestCase {
         StoredField storedField = KNNVectorFieldMapperUtil.createStoredFieldForHalfFloatVector(TEST_FIELD_NAME, TEST_FLOAT_VECTOR);
         assertEquals(TEST_FIELD_NAME, storedField.name());
         BytesRef bytes = new BytesRef(storedField.binaryValue().bytes);
-        assertArrayEquals(TEST_FLOAT_VECTOR, KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.byteToFloatArray(bytes), 0.001f);
+        KNNVectorAsCollectionOfHalfFloatsSerializer vectorSerializer = new KNNVectorAsCollectionOfHalfFloatsSerializer(
+            TEST_FLOAT_VECTOR.length
+        );
+        assertArrayEquals(TEST_FLOAT_VECTOR, vectorSerializer.byteToFloatArray(bytes), 0.001f);
 
         Object vector = KNNVectorFieldMapperUtil.deserializeStoredVector(storedField.binaryValue(), VectorDataType.HALF_FLOAT);
         assertTrue(vector instanceof float[]);

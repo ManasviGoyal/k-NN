@@ -92,7 +92,8 @@ public enum VectorDataType {
 
         @Override
         public float[] getVectorFromBytesRef(BytesRef binaryValue) {
-            final KNNVectorSerializer vectorSerializer = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;
+            int dimension = binaryValue.length / 2;
+            KNNVectorAsCollectionOfHalfFloatsSerializer vectorSerializer = new KNNVectorAsCollectionOfHalfFloatsSerializer(dimension);
             return vectorSerializer.byteToFloatArray(binaryValue);
         }
 

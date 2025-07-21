@@ -10,7 +10,6 @@ import org.apache.lucene.index.IndexableFieldType;
 import org.apache.lucene.util.BytesRef;
 import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfFloatsSerializer;
 import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
-import org.opensearch.knn.index.codec.util.KNNVectorSerializer;
 
 public class VectorField extends Field {
 
@@ -23,14 +22,16 @@ public class VectorField extends Field {
     public VectorField(String name, float[] value, IndexableFieldType type, VectorDataType dataType) {
         super(name, new BytesRef(), type);
         try {
-            final KNNVectorSerializer vectorSerializer;
+            final byte[] floatToByte;
             if (dataType == VectorDataType.HALF_FLOAT) {
-                vectorSerializer = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;
+                KNNVectorAsCollectionOfHalfFloatsSerializer vectorSerializer = new KNNVectorAsCollectionOfHalfFloatsSerializer(
+                    value.length
+                );
+                floatToByte = vectorSerializer.floatToByteArray(value);
             } else {
-                vectorSerializer = KNNVectorAsCollectionOfFloatsSerializer.INSTANCE;
+                floatToByte = KNNVectorAsCollectionOfFloatsSerializer.INSTANCE.floatToByteArray(value);
             }
-            final byte[] floatToByte = vectorSerializer.floatToByteArray(value);
-            this.setBytesValue(floatToByte);
+            setBytesValue(floatToByte);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
