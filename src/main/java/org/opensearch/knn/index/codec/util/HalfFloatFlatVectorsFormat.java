@@ -13,7 +13,6 @@ import org.apache.lucene.codecs.hnsw.FlatVectorsScorer;
 import org.apache.lucene.codecs.hnsw.FlatVectorsWriter;
 import org.apache.lucene.index.SegmentReadState;
 import org.apache.lucene.index.SegmentWriteState;
-import org.opensearch.knn.index.codec.KNN9120Codec.KNN9120BinaryVectorScorer;
 
 /**
  * A FlatVectorsFormat wrapper that writes half-precision (FP16) vectors.
@@ -21,8 +20,8 @@ import org.opensearch.knn.index.codec.KNN9120Codec.KNN9120BinaryVectorScorer;
 
 /**
  * Custom FlatVectorsFormat implementation to support half-float vectors. This class is mostly identical to
- * {@link org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsFormat}, however we use the custom {@link KNN9120BinaryVectorScorer}
- * to perform hamming bit scoring.
+ * {@link org.apache.lucene.codecs.lucene99.Lucene99FlatVectorsFormat}, however we use the custom {@link HalfFloatFlatVectorsWriter}
+ * and {@link HalfFloatFlatVectorsReader} for storage and retrieval of half-float vectors.
  */
 public final class HalfFloatFlatVectorsFormat extends FlatVectorsFormat {
 
