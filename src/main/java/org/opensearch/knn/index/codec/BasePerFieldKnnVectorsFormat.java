@@ -99,7 +99,9 @@ public abstract class BasePerFieldKnnVectorsFormat extends PerFieldKnnVectorsFor
             )
         ).fieldType(field);
 
-        if (mappedFieldType.getVectorDataType() == VectorDataType.HALF_FLOAT) {
+        // For now, we directly return the HalfFloatFlatVectorsFormat to perform Exact Search for FP16 based on the approximate threshold.
+        // This would change once the mapping field-level parameter `index` is added to disable graph creation.
+        if (getApproximateThresholdValue() < 0 && mappedFieldType.getVectorDataType() == VectorDataType.HALF_FLOAT) {
             return new KNN990HalfFloatFlatVectorsFormat(FlatVectorScorerUtil.getLucene99FlatVectorsScorer());
         }
 
@@ -142,7 +144,8 @@ public abstract class BasePerFieldKnnVectorsFormat extends PerFieldKnnVectorsFor
                 params,
                 defaultMaxConnections,
                 defaultBeamWidth,
-                knnMethodContext.getSpaceType()
+                knnMethodContext.getSpaceType(),
+                mappedFieldType.getVectorDataType()
             );
             log.debug(
                 "Initialize KNN vector format for field [{}] with params [{}] = \"{}\" and [{}] = \"{}\"",
@@ -174,6 +177,9 @@ public abstract class BasePerFieldKnnVectorsFormat extends PerFieldKnnVectorsFor
         // This is private method and mapperService is already checked for null or valid instance type before this call
         // at caller, hence we don't need additional isPresent check here.
         final IndexSettings indexSettings = mapperService.get().getIndexSettings();
+        if (indexSettings == null) {
+            return KNNSettings.INDEX_KNN_ADVANCED_APPROXIMATE_THRESHOLD_DEFAULT_VALUE;
+        }
         final Integer approximateThresholdValue = indexSettings.getValue(KNNSettings.INDEX_KNN_ADVANCED_APPROXIMATE_THRESHOLD_SETTING);
         return approximateThresholdValue != null
             ? approximateThresholdValue

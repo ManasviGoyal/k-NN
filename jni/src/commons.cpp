@@ -144,9 +144,9 @@ void knn_jni::commons::convertFP32ToFP16(knn_jni::JNIUtilInterface* jniUtil,
     for (; i < count; ++i) {
         float32x4_t sv = vdupq_n_f32(src[i]);
         float16x4_t hv = vcvt_f16_f32(sv);
-        __fp16     lane = vgetq_lane_f16(hv, 0);
+        __fp16     lane = vget_lane_f16(hv, 0);
         dst[i] = *reinterpret_cast<const uint16_t*>(&lane);
-   >
+    }
 
 #elif defined(__x86_64__)
   #if defined(__AVX512F__)

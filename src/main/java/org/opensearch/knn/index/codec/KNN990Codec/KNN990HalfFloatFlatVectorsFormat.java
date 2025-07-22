@@ -38,7 +38,7 @@ public final class KNN990HalfFloatFlatVectorsFormat extends FlatVectorsFormat {
     private final FlatVectorsScorer vectorsScorer;
 
     public KNN990HalfFloatFlatVectorsFormat() {
-        this(new FlatVectorScorerUtil.getLucene99FlatVectorsScorer());
+        this(FlatVectorScorerUtil.getLucene99FlatVectorsScorer());
     }
 
     public KNN990HalfFloatFlatVectorsFormat(FlatVectorsScorer vectorsScorer) {
