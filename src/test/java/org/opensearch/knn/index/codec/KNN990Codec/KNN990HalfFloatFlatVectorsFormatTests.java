@@ -1,8 +1,13 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package org.opensearch.knn.index.codec.util;
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+package org.opensearch.knn.index.codec.KNN990Codec;
 
 import lombok.SneakyThrows;
 import org.apache.lucene.codecs.CodecUtil;
@@ -35,6 +40,7 @@ import org.opensearch.knn.common.KNNConstants;
 import org.opensearch.knn.index.KNNSettings;
 import org.opensearch.knn.index.SpaceType;
 import org.opensearch.knn.index.VectorDataType;
+import org.opensearch.knn.index.codec.util.UnitTestCodec;
 import org.opensearch.knn.index.engine.KNNEngine;
 import org.opensearch.knn.index.mapper.KNNVectorFieldMapper;
 
@@ -49,8 +55,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 
-public class HalfFloatFlatVectorsFormatTests extends KNNTestCase {
-    private static final Codec TESTING_CODEC = new UnitTestCodec(() -> new HalfFloatFlatVectorsFormat(new DefaultFlatVectorScorer()));
+public class KNN990HalfFloatFlatVectorsFormatTests extends KNNTestCase {
+    private static final Codec TESTING_CODEC = new UnitTestCodec(() -> new KNN990HalfFloatFlatVectorsFormat(new DefaultFlatVectorScorer()));
     private static final String FLAT_VECTOR_FILE_EXT = ".vec";
     private static final String FLOAT_VECTOR_FIELD = "float_field";
     private Directory dir;
@@ -110,14 +116,14 @@ public class HalfFloatFlatVectorsFormatTests extends KNNTestCase {
     }
 
     public void testFormatName_withValidInput_thenSuccess() {
-        final String validFormatName = "HalfFloatFlatVectorsFormat";
-        Assert.assertEquals(validFormatName, new HalfFloatFlatVectorsFormat().getName());
-        Assert.assertEquals(validFormatName, new HalfFloatFlatVectorsFormat(new DefaultFlatVectorScorer()).getName());
+        final String validFormatName = "KNN990HalfFloatFlatVectorsFormat";
+        Assert.assertEquals(validFormatName, new KNN990HalfFloatFlatVectorsFormat().getName());
+        Assert.assertEquals(validFormatName, new KNN990HalfFloatFlatVectorsFormat(new DefaultFlatVectorScorer()).getName());
     }
 
     @SneakyThrows
     public void testReaderAndWriter_whenValidInput_thenSuccess() {
-        final HalfFloatFlatVectorsFormat mockedFlatVectorsFormat = Mockito.mock(HalfFloatFlatVectorsFormat.class);
+        final KNN990HalfFloatFlatVectorsFormat mockedFlatVectorsFormat = Mockito.mock(KNN990HalfFloatFlatVectorsFormat.class);
 
         final String segmentName = "test-segment-name";
 
@@ -178,7 +184,7 @@ public class HalfFloatFlatVectorsFormatTests extends KNNTestCase {
         Mockito.when(mockedFlatVectorsFormat.fieldsReader(mockedSegmentReadState)).thenReturn(Mockito.mock(FlatVectorsReader.class));
         Mockito.when(mockedFlatVectorsFormat.fieldsWriter(mockedSegmentWriteState)).thenReturn(Mockito.mock(FlatVectorsWriter.class));
 
-        final HalfFloatFlatVectorsFormat halfFloatFlatVectorsFormat = new HalfFloatFlatVectorsFormat();
+        final KNN990HalfFloatFlatVectorsFormat flatVectorsFormat = new KNN990HalfFloatFlatVectorsFormat();
 
         try (MockedStatic<CodecUtil> mockedStaticCodecUtil = Mockito.mockStatic(CodecUtil.class)) {
             mockedStaticCodecUtil.when(
@@ -186,9 +192,9 @@ public class HalfFloatFlatVectorsFormatTests extends KNNTestCase {
             ).thenAnswer((Answer<Void>) invocation -> null);
             mockedStaticCodecUtil.when(() -> CodecUtil.retrieveChecksum(any(IndexInput.class)))
                 .thenAnswer((Answer<Void>) invocation -> null);
-            Assert.assertTrue(halfFloatFlatVectorsFormat.fieldsReader(mockedSegmentReadState) instanceof FlatVectorsReader);
+            Assert.assertTrue(flatVectorsFormat.fieldsReader(mockedSegmentReadState) instanceof FlatVectorsReader);
 
-            Assert.assertTrue(halfFloatFlatVectorsFormat.fieldsWriter(mockedSegmentWriteState) instanceof FlatVectorsWriter);
+            Assert.assertTrue(flatVectorsFormat.fieldsWriter(mockedSegmentWriteState) instanceof FlatVectorsWriter);
         }
     }
 

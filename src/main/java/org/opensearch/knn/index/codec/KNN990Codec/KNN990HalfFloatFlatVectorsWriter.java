@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package org.opensearch.knn.index.codec.util;
+package org.opensearch.knn.index.codec.KNN990Codec;
 
-import static org.opensearch.knn.index.codec.util.HalfFloatFlatVectorsFormat.DIRECT_MONOTONIC_BLOCK_SHIFT;
+import static org.opensearch.knn.index.codec.KNN990Codec.KNN990HalfFloatFlatVectorsFormat.DIRECT_MONOTONIC_BLOCK_SHIFT;
 import static org.apache.lucene.search.DocIdSetIterator.NO_MORE_DOCS;
 
 import java.io.Closeable;
@@ -40,13 +40,14 @@ import org.apache.lucene.util.hnsw.RandomVectorScorerSupplier;
 import org.apache.lucene.util.hnsw.UpdateableRandomVectorScorer;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.search.VectorScorer;
+import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
 
 /**
  * Writes half float vector values to index segments.
  */
-public final class HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
+public final class KNN990HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
 
-    private static final long SHALLOW_RAM_BYTES_USED = RamUsageEstimator.shallowSizeOfInstance(HalfFloatFlatVectorsWriter.class);
+    private static final long SHALLOW_RAM_BYTES_USED = RamUsageEstimator.shallowSizeOfInstance(KNN990HalfFloatFlatVectorsWriter.class);
 
     private final SegmentWriteState segmentWriteState;
     private final IndexOutput meta, vectorData;
@@ -54,19 +55,19 @@ public final class HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
     private final List<FieldWriter<?>> fields = new ArrayList<>();
     private boolean finished;
 
-    public HalfFloatFlatVectorsWriter(SegmentWriteState state, FlatVectorsScorer scorer) throws IOException {
+    public KNN990HalfFloatFlatVectorsWriter(SegmentWriteState state, FlatVectorsScorer scorer) throws IOException {
         super(scorer);
         this.segmentWriteState = state;
         String metaFileName = IndexFileNames.segmentFileName(
             state.segmentInfo.name,
             state.segmentSuffix,
-            HalfFloatFlatVectorsFormat.META_EXTENSION
+            KNN990HalfFloatFlatVectorsFormat.META_EXTENSION
         );
 
         String vectorDataFileName = IndexFileNames.segmentFileName(
             state.segmentInfo.name,
             state.segmentSuffix,
-            HalfFloatFlatVectorsFormat.VECTOR_DATA_EXTENSION
+            KNN990HalfFloatFlatVectorsFormat.VECTOR_DATA_EXTENSION
         );
 
         try {
@@ -75,15 +76,15 @@ public final class HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
 
             CodecUtil.writeIndexHeader(
                 meta,
-                HalfFloatFlatVectorsFormat.META_CODEC_NAME,
-                HalfFloatFlatVectorsFormat.VERSION_CURRENT,
+                KNN990HalfFloatFlatVectorsFormat.META_CODEC_NAME,
+                KNN990HalfFloatFlatVectorsFormat.VERSION_CURRENT,
                 state.segmentInfo.getId(),
                 state.segmentSuffix
             );
             CodecUtil.writeIndexHeader(
                 vectorData,
-                HalfFloatFlatVectorsFormat.VECTOR_DATA_CODEC_NAME,
-                HalfFloatFlatVectorsFormat.VERSION_CURRENT,
+                KNN990HalfFloatFlatVectorsFormat.VECTOR_DATA_CODEC_NAME,
+                KNN990HalfFloatFlatVectorsFormat.VERSION_CURRENT,
                 state.segmentInfo.getId(),
                 state.segmentSuffix
             );
@@ -332,7 +333,7 @@ public final class HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
 
         static FieldWriter<?> create(FieldInfo fieldInfo) {
             int dim = fieldInfo.getVectorDimension();
-            return new HalfFloatFlatVectorsWriter.FieldWriter<float[]>(fieldInfo) {
+            return new KNN990HalfFloatFlatVectorsWriter.FieldWriter<float[]>(fieldInfo) {
                 @Override
                 public float[] copyValue(float[] value) {
                     return ArrayUtil.copyOfSubArray(value, 0, dim);
