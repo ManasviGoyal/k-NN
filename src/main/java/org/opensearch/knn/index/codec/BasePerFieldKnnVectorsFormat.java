@@ -19,7 +19,7 @@ import org.opensearch.knn.index.codec.KNN990Codec.NativeEngines990KnnVectorsForm
 import org.opensearch.knn.index.codec.nativeindex.NativeIndexBuildStrategyFactory;
 import org.opensearch.knn.index.codec.params.KNNScalarQuantizedVectorsFormatParams;
 import org.opensearch.knn.index.codec.params.KNNVectorsFormatParams;
-import org.opensearch.knn.index.codec.util.HalfFloatFlatVectorsFormat;
+import org.opensearch.knn.index.codec.KNN990Codec.KNN990HalfFloatFlatVectorsFormat;
 import org.opensearch.knn.index.engine.KNNEngine;
 import org.opensearch.knn.index.engine.KNNMethodContext;
 import org.opensearch.knn.index.mapper.KNNMappingConfig;
@@ -100,7 +100,7 @@ public abstract class BasePerFieldKnnVectorsFormat extends PerFieldKnnVectorsFor
         ).fieldType(field);
 
         if (mappedFieldType.getVectorDataType() == VectorDataType.HALF_FLOAT) {
-            return new HalfFloatFlatVectorsFormat(FlatVectorScorerUtil.getLucene99FlatVectorsScorer());
+            return new KNN990HalfFloatFlatVectorsFormat(FlatVectorScorerUtil.getLucene99FlatVectorsScorer());
         }
 
         final KNNMappingConfig knnMappingConfig = mappedFieldType.getKnnMappingConfig();

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package org.opensearch.knn.index.codec.util;
+package org.opensearch.knn.index.codec.KNN990Codec;
 
 import static org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsReader.readSimilarityFunction;
 import static org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsReader.readVectorEncoding;
@@ -35,27 +35,28 @@ import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.RamUsageEstimator;
 import org.apache.lucene.util.hnsw.RandomVectorScorer;
+import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
 
 /**
  * A FlatVectorsReader that reads half-precision (2-byte) FP16 data from .vec files,
  * decodes to float32 via the KNN serializer, and otherwise follows Lucene99 logic.
  */
-public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
-    private static final long SHALLOW_SIZE = RamUsageEstimator.shallowSizeOfInstance(HalfFloatFlatVectorsReader.class);
+public final class KNN990HalfFloatFlatVectorsReader extends FlatVectorsReader {
+    private static final long SHALLOW_SIZE = RamUsageEstimator.shallowSizeOfInstance(KNN990HalfFloatFlatVectorsReader.class);
 
     private final IntObjectHashMap<FieldEntry> fields = new IntObjectHashMap<>();
     private final IndexInput vectorData;
     private final FieldInfos fieldInfos;
 
-    public HalfFloatFlatVectorsReader(SegmentReadState state, FlatVectorsScorer scorer) throws IOException {
+    public KNN990HalfFloatFlatVectorsReader(SegmentReadState state, FlatVectorsScorer scorer) throws IOException {
         super(scorer);
         int versionMeta = readMetadata(state);
         this.fieldInfos = state.fieldInfos;
         vectorData = openDataInput(
             state,
             versionMeta,
-            HalfFloatFlatVectorsFormat.VECTOR_DATA_EXTENSION,
-            HalfFloatFlatVectorsFormat.VECTOR_DATA_CODEC_NAME,
+            KNN990HalfFloatFlatVectorsFormat.VECTOR_DATA_EXTENSION,
+            KNN990HalfFloatFlatVectorsFormat.VECTOR_DATA_CODEC_NAME,
             // Flat formats are used to randomly access vectors from their node ID that is stored
             // in the HNSW graph.
             state.context
@@ -66,7 +67,7 @@ public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
         String metaFileName = IndexFileNames.segmentFileName(
             state.segmentInfo.name,
             state.segmentSuffix,
-            HalfFloatFlatVectorsFormat.META_EXTENSION
+            KNN990HalfFloatFlatVectorsFormat.META_EXTENSION
         );
         int versionMeta = -1;
         try (ChecksumIndexInput meta = state.directory.openChecksumInput(metaFileName)) {
@@ -74,9 +75,9 @@ public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
             try {
                 versionMeta = CodecUtil.checkIndexHeader(
                     meta,
-                    HalfFloatFlatVectorsFormat.META_CODEC_NAME,
-                    HalfFloatFlatVectorsFormat.VERSION_START,
-                    HalfFloatFlatVectorsFormat.VERSION_CURRENT,
+                    KNN990HalfFloatFlatVectorsFormat.META_CODEC_NAME,
+                    KNN990HalfFloatFlatVectorsFormat.VERSION_START,
+                    KNN990HalfFloatFlatVectorsFormat.VERSION_CURRENT,
                     state.segmentInfo.getId(),
                     state.segmentSuffix
                 );
@@ -103,8 +104,8 @@ public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
             int versionVectorData = CodecUtil.checkIndexHeader(
                 in,
                 codecName,
-                HalfFloatFlatVectorsFormat.VERSION_START,
-                HalfFloatFlatVectorsFormat.VERSION_CURRENT,
+                KNN990HalfFloatFlatVectorsFormat.VERSION_START,
+                KNN990HalfFloatFlatVectorsFormat.VERSION_CURRENT,
                 state.segmentInfo.getId(),
                 state.segmentSuffix
             );
@@ -127,14 +128,14 @@ public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
             if (info == null) {
                 throw new CorruptIndexException("Invalid field number: " + fieldNumber, meta);
             }
-            HalfFloatFlatVectorsReader.FieldEntry fieldEntry = HalfFloatFlatVectorsReader.FieldEntry.create(meta, info);
+            KNN990HalfFloatFlatVectorsReader.FieldEntry fieldEntry = KNN990HalfFloatFlatVectorsReader.FieldEntry.create(meta, info);
             fields.put(info.number, fieldEntry);
         }
     }
 
     @Override
     public long ramBytesUsed() {
-        return HalfFloatFlatVectorsReader.SHALLOW_SIZE + fields.ramBytesUsed();
+        return KNN990HalfFloatFlatVectorsReader.SHALLOW_SIZE + fields.ramBytesUsed();
     }
 
     @Override
@@ -235,7 +236,6 @@ public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
 
     @Override
     public RandomVectorScorer getRandomVectorScorer(String field, float[] target) throws IOException {
-        // identical to Lucene99, but using our half-float reader
         FloatVectorValues vals = getFloatVectorValues(field);
         FieldEntry fe = getFieldEntryOrThrow(field);
         return vectorScorer.getRandomVectorScorer(fe.similarityFunction, vals, target);
@@ -243,7 +243,6 @@ public final class HalfFloatFlatVectorsReader extends FlatVectorsReader {
 
     @Override
     public RandomVectorScorer getRandomVectorScorer(String field, byte[] target) throws IOException {
-        // we don’t support byte[] for half-float
         throw new UnsupportedOperationException("HalfFloatFlatVectorsReader does not support byte[] targets");
     }
 
