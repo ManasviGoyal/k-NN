@@ -159,6 +159,40 @@ public class ExplainIT extends KNNRestTestCase {
     }
 
     @SneakyThrows
+    public void testExplain_whenFilerQueryWithDistHalffloat_thenRadialWithExactSearch() {
+        setupKNNHalfFloatIndexForFilterQuery();
+
+        final float[] queryVector = new float[] { 3.3f, 3.0f, 5.0f };
+        TermQueryBuilder termQueryBuilder = QueryBuilders.termQuery("color", "red");
+        float distance = 15f;
+
+        XContentBuilder queryBuilder = XContentFactory.jsonBuilder()
+            .startObject()
+            .startObject("query")
+            .startObject("knn")
+            .startObject(FIELD_NAME)
+            .field("vector", queryVector)
+            .field(MAX_DISTANCE, distance)
+            .field("filter", termQueryBuilder)
+            .endObject()
+            .endObject()
+            .endObject()
+            .endObject();
+
+        validateExplainSearchResponse(
+            queryBuilder,
+            RADIAL_SEARCH,
+            EXACT_SEARCH,
+            VectorDataType.HALF_FLOAT.name(),
+            SpaceType.L2.getValue(),
+            String.valueOf(distance)
+        );
+
+        // Delete index
+        deleteKNNIndex(INDEX_NAME);
+    }
+
+    @SneakyThrows
     public void testExplain_whenDefaultDiskBasedSearch_thenRescoringEnabled() {
         int dimension = 16;
         float[] queryVector = new float[] {
@@ -275,6 +309,59 @@ public class ExplainIT extends KNNRestTestCase {
         );
     }
 
+    @SneakyThrows
+    public void testExplain_whenDefaultHalffloat_thenANNSearch() {
+        int dimension = 128;
+        int numDocs = 100;
+        createDefaultKnnHalfFloatIndex(dimension);
+        indexTestData(INDEX_NAME, FIELD_NAME, dimension, numDocs);
+        float[] queryVector = new float[dimension];
+        Arrays.fill(queryVector, (float) numDocs);
+        XContentBuilder queryBuilder = buildSearchQuery(FIELD_NAME, 10, queryVector, null);
+        validateExplainSearchResponse(
+            queryBuilder,
+            ANN_SEARCH,
+            VectorDataType.HALF_FLOAT.name(),
+            SpaceType.L2.getValue(),
+            SpaceType.L2.explainScoreTranslation(0)
+        );
+        deleteKNNIndex(INDEX_NAME);
+    }
+
+    @SneakyThrows
+    public void testExplain_whenDefaultWithDistHalffloat_thenRadialWithANNSearch() {
+        int dimension = 128;
+        int numDocs = 100;
+        createDefaultKnnHalfFloatIndex(dimension);
+        indexTestData(INDEX_NAME, FIELD_NAME, dimension, numDocs);
+        float[] queryVector = new float[dimension];
+        Arrays.fill(queryVector, (float) numDocs);
+
+        float distance = 15f;
+        XContentBuilder queryBuilder = XContentFactory.jsonBuilder()
+            .startObject()
+            .startObject("query")
+            .startObject("knn")
+            .startObject(FIELD_NAME)
+            .field("vector", queryVector)
+            .field(MAX_DISTANCE, distance)
+            .endObject()
+            .endObject()
+            .endObject()
+            .endObject();
+
+        validateExplainSearchResponse(
+            queryBuilder,
+            RADIAL_SEARCH,
+            ANN_SEARCH,
+            VectorDataType.HALF_FLOAT.name(),
+            SpaceType.L2.getValue(),
+            SpaceType.L2.explainScoreTranslation(0),
+            String.valueOf(distance)
+        );
+        deleteKNNIndex(INDEX_NAME);
+    }
+
     private void validateExplainSearchResponse(XContentBuilder queryBuilder, String... descriptions) throws IOException, ParseException {
         String responseBody = EntityUtils.toString(performSearch(INDEX_NAME, queryBuilder.toString(), "explain=true").getEntity());
         List<Object> searchResponseHits = parseSearchResponseHits(responseBody);
@@ -310,8 +397,37 @@ public class ExplainIT extends KNNRestTestCase {
         createKnnIndex(INDEX_NAME, getKNNDefaultIndexSettings(), mapping);
     }
 
+    private void createDefaultKnnHalfFloatIndex(int dimension) throws IOException {
+        XContentBuilder builder = XContentFactory.jsonBuilder()
+            .startObject()
+            .startObject("properties")
+            .startObject(FIELD_NAME)
+            .field("type", "knn_vector")
+            .field("dimension", dimension)
+            .field("data_type", VectorDataType.HALF_FLOAT.name())
+            .startObject(KNN_METHOD)
+            .field(NAME, METHOD_HNSW)
+            .field(METHOD_PARAMETER_SPACE_TYPE, SpaceType.L2)
+            .field(KNN_ENGINE, KNNEngine.FAISS.getName())
+            .endObject()
+            .endObject()
+            .endObject()
+            .endObject();
+        final String mapping = builder.toString();
+        createKnnIndex(INDEX_NAME, getKNNDefaultIndexSettings(), mapping);
+    }
+
     private void setupKNNIndexForFilterQuery() throws Exception {
         createDefaultKnnIndex(3);
+        addKnnDocWithAttributes("doc1", new float[] { 6.0f, 7.9f, 3.1f }, ImmutableMap.of("color", "red", "taste", "sweet"));
+        addKnnDocWithAttributes("doc2", new float[] { 3.2f, 2.1f, 4.8f }, ImmutableMap.of("color", "green"));
+        addKnnDocWithAttributes("doc3", new float[] { 4.1f, 5.0f, 7.1f }, ImmutableMap.of("color", "red"));
+
+        refreshIndex(INDEX_NAME);
+    }
+
+    private void setupKNNHalfFloatIndexForFilterQuery() throws Exception {
+        createDefaultKnnHalfFloatIndex(3);
         addKnnDocWithAttributes("doc1", new float[] { 6.0f, 7.9f, 3.1f }, ImmutableMap.of("color", "red", "taste", "sweet"));
         addKnnDocWithAttributes("doc2", new float[] { 3.2f, 2.1f, 4.8f }, ImmutableMap.of("color", "green"));
         addKnnDocWithAttributes("doc3", new float[] { 4.1f, 5.0f, 7.1f }, ImmutableMap.of("color", "red"));
