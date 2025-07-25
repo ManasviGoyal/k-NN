@@ -99,7 +99,9 @@ public abstract class BasePerFieldKnnVectorsFormat extends PerFieldKnnVectorsFor
             )
         ).fieldType(field);
 
-        if (mappedFieldType.getVectorDataType() == VectorDataType.HALF_FLOAT) {
+        // For now, we directly return the HalfFloatFlatVectorsFormat to perform Exact Search for FP16 based on the approximate threshold.
+        // This would change once the mapping field-level parameter `index` is added to disable graph creation.
+        if (getApproximateThresholdValue() < 0 && mappedFieldType.getVectorDataType() == VectorDataType.HALF_FLOAT) {
             return new KNN990HalfFloatFlatVectorsFormat(FlatVectorScorerUtil.getLucene99FlatVectorsScorer());
         }
 
@@ -115,6 +117,12 @@ public abstract class BasePerFieldKnnVectorsFormat extends PerFieldKnnVectorsFor
         final Map<String, Object> params = knnMethodContext.getMethodComponentContext().getParameters();
 
         if (engine == KNNEngine.LUCENE) {
+            if (mappedFieldType.getVectorDataType() == VectorDataType.HALF_FLOAT) {
+                throw new UnsupportedOperationException(
+                    "Half float data type is not yet supported for Lucene ANN."
+                );
+            }
+
             if (params != null && params.containsKey(METHOD_ENCODER_PARAMETER)) {
                 KNNScalarQuantizedVectorsFormatParams knnScalarQuantizedVectorsFormatParams = new KNNScalarQuantizedVectorsFormatParams(
                     params,
@@ -142,7 +150,8 @@ public abstract class BasePerFieldKnnVectorsFormat extends PerFieldKnnVectorsFor
                 params,
                 defaultMaxConnections,
                 defaultBeamWidth,
-                knnMethodContext.getSpaceType()
+                knnMethodContext.getSpaceType(),
+                mappedFieldType.getVectorDataType()
             );
             log.debug(
                 "Initialize KNN vector format for field [{}] with params [{}] = \"{}\" and [{}] = \"{}\"",
@@ -153,6 +162,12 @@ public abstract class BasePerFieldKnnVectorsFormat extends PerFieldKnnVectorsFor
                 knnVectorsFormatParams.getBeamWidth()
             );
             return vectorsFormatSupplier.apply(knnVectorsFormatParams);
+        }
+
+        if (mappedFieldType.getVectorDataType() == VectorDataType.HALF_FLOAT) {
+            throw new UnsupportedOperationException(
+                "Half float data type is not yet supported for native engines. For Faiss, use the fp16 encoder type with float data type for FP16 support."
+            );
         }
 
         // All native engines to use NativeEngines990KnnVectorsFormat
@@ -174,6 +189,9 @@ public abstract class BasePerFieldKnnVectorsFormat extends PerFieldKnnVectorsFor
         // This is private method and mapperService is already checked for null or valid instance type before this call
         // at caller, hence we don't need additional isPresent check here.
         final IndexSettings indexSettings = mapperService.get().getIndexSettings();
+        if (indexSettings == null) {
+            return KNNSettings.INDEX_KNN_ADVANCED_APPROXIMATE_THRESHOLD_DEFAULT_VALUE;
+        }
         final Integer approximateThresholdValue = indexSettings.getValue(KNNSettings.INDEX_KNN_ADVANCED_APPROXIMATE_THRESHOLD_SETTING);
         return approximateThresholdValue != null
             ? approximateThresholdValue

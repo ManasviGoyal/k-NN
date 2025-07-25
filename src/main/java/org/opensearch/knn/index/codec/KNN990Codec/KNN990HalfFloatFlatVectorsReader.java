@@ -36,6 +36,7 @@ import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.RamUsageEstimator;
 import org.apache.lucene.util.hnsw.RandomVectorScorer;
 import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
+import org.opensearch.knn.index.codec.util.KNNIOUtils;
 
 /**
  * A FlatVectorsReader that reads half-precision (2-byte) FP16 data from .vec files,
@@ -52,15 +53,20 @@ public final class KNN990HalfFloatFlatVectorsReader extends FlatVectorsReader {
         super(scorer);
         int versionMeta = readMetadata(state);
         this.fieldInfos = state.fieldInfos;
-        vectorData = openDataInput(
-            state,
-            versionMeta,
-            KNN990HalfFloatFlatVectorsFormat.VECTOR_DATA_EXTENSION,
-            KNN990HalfFloatFlatVectorsFormat.VECTOR_DATA_CODEC_NAME,
-            // Flat formats are used to randomly access vectors from their node ID that is stored
-            // in the HNSW graph.
-            state.context
-        );
+        try {
+            vectorData =
+                openDataInput(
+                    state,
+                    versionMeta,
+                    KNN990HalfFloatFlatVectorsFormat.VECTOR_DATA_EXTENSION,
+                    KNN990HalfFloatFlatVectorsFormat.VECTOR_DATA_CODEC_NAME,
+                    // Flat formats are used to randomly access vectors from their node ID that is stored
+                    // in the HNSW graph.
+                    IOContext.DEFAULT);
+        } catch (Throwable t) {
+            KNNIOUtils.closeWhileSuppressingExceptions(t, this);
+            throw t;
+        }
     }
 
     private int readMetadata(SegmentReadState state) throws IOException {
@@ -118,6 +124,7 @@ public final class KNN990HalfFloatFlatVectorsReader extends FlatVectorsReader {
             CodecUtil.retrieveChecksum(in);
             return in;
         } catch (Throwable t) {
+            KNNIOUtils.closeWhileSuppressingExceptions(t, in);
             throw t;
         }
     }
