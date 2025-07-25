@@ -41,6 +41,7 @@ import org.apache.lucene.util.hnsw.UpdateableRandomVectorScorer;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.search.VectorScorer;
 import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
+import org.opensearch.knn.index.codec.util.KNNIOUtils;
 
 /**
  * Writes half float vector values to index segments.
@@ -89,6 +90,7 @@ public final class KNN990HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
                 state.segmentSuffix
             );
         } catch (Throwable t) {
+            KNNIOUtils.closeWhileSuppressingExceptions(t, this);
             throw t;
         }
     }
@@ -299,6 +301,8 @@ public final class KNN990HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
                 segmentWriteState.directory.deleteFile(tempVectorData.getName());
             }, docsWithField.cardinality(), randomVectorScorerSupplier);
         } catch (Throwable t) {
+            KNNIOUtils.closeWhileSuppressingExceptions(t, vectorDataInput, tempVectorData);
+            KNNIOUtils.deleteFilesSuppressingExceptions(t, segmentWriteState.directory, tempVectorData.getName());
             throw t;
         }
     }
