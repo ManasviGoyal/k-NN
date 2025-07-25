@@ -158,6 +158,12 @@ public abstract class BasePerFieldKnnVectorsFormat extends PerFieldKnnVectorsFor
             return vectorsFormatSupplier.apply(knnVectorsFormatParams);
         }
 
+        if (mappedFieldType.getVectorDataType() == VectorDataType.HALF_FLOAT) {
+            throw new UnsupportedOperationException(
+                "Half float data type is not yet supported for native engines. For Faiss, use the fp16 encoder type with float data type for FP16 support."
+            );
+        }
+
         // All native engines to use NativeEngines990KnnVectorsFormat
         return nativeEngineVectorsFormat();
     }
@@ -165,6 +171,7 @@ public abstract class BasePerFieldKnnVectorsFormat extends PerFieldKnnVectorsFor
     private NativeEngines990KnnVectorsFormat nativeEngineVectorsFormat() {
         // mapperService is already checked for null or valid instance type at caller, hence we don't need
         // addition isPresent check here.
+        if (m)
         final int approximateThreshold = getApproximateThresholdValue();
         return new NativeEngines990KnnVectorsFormat(
             new Lucene99FlatVectorsFormat(FlatVectorScorerUtil.getLucene99FlatVectorsScorer()),
