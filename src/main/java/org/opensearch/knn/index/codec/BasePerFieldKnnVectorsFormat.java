@@ -118,9 +118,7 @@ public abstract class BasePerFieldKnnVectorsFormat extends PerFieldKnnVectorsFor
 
         if (engine == KNNEngine.LUCENE) {
             if (mappedFieldType.getVectorDataType() == VectorDataType.HALF_FLOAT) {
-                throw new UnsupportedOperationException(
-                    "Half float data type is not yet supported for Lucene ANN."
-                );
+                throw new UnsupportedOperationException("Half float data type is not yet supported for Lucene ANN.");
             }
 
             if (params != null && params.containsKey(METHOD_ENCODER_PARAMETER)) {
@@ -150,8 +148,7 @@ public abstract class BasePerFieldKnnVectorsFormat extends PerFieldKnnVectorsFor
                 params,
                 defaultMaxConnections,
                 defaultBeamWidth,
-                knnMethodContext.getSpaceType(),
-                mappedFieldType.getVectorDataType()
+                knnMethodContext.getSpaceType()
             );
             log.debug(
                 "Initialize KNN vector format for field [{}] with params [{}] = \"{}\" and [{}] = \"{}\"",

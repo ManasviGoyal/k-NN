@@ -19,7 +19,6 @@ import org.apache.lucene.codecs.hnsw.FlatFieldVectorsWriter;
 import org.apache.lucene.codecs.hnsw.FlatVectorsScorer;
 import org.apache.lucene.codecs.hnsw.FlatVectorsWriter;
 import org.apache.lucene.codecs.lucene95.OrdToDocDISIReaderConfiguration;
-import org.apache.lucene.codecs.lucene95.OffHeapFloatVectorValues;
 import org.apache.lucene.index.DocsWithFieldSet;
 import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.FloatVectorValues;
@@ -30,16 +29,12 @@ import org.apache.lucene.index.SegmentWriteState;
 import org.apache.lucene.index.Sorter;
 import org.apache.lucene.index.VectorEncoding;
 import org.apache.lucene.store.IndexOutput;
-import org.apache.lucene.store.IndexInput;
-import org.apache.lucene.store.IOContext;
 import org.apache.lucene.util.ArrayUtil;
 import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.RamUsageEstimator;
 import org.apache.lucene.util.hnsw.CloseableRandomVectorScorerSupplier;
 import org.apache.lucene.util.hnsw.RandomVectorScorerSupplier;
 import org.apache.lucene.util.hnsw.UpdateableRandomVectorScorer;
-import org.apache.lucene.util.Bits;
-import org.apache.lucene.search.VectorScorer;
 import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
 import org.opensearch.knn.index.codec.util.KNNIOUtils;
 
@@ -207,104 +202,7 @@ public final class KNN990HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
 
     @Override
     public CloseableRandomVectorScorerSupplier mergeOneFieldToIndex(FieldInfo fieldInfo, MergeState mergeState) throws IOException {
-        long vectorDataOffset = vectorData.alignFilePointer(Short.BYTES);
-        IndexOutput tempVectorData = segmentWriteState.directory.createTempOutput(vectorData.getName(), "temp", segmentWriteState.context);
-        IndexInput vectorDataInput = null;
-        try {
-            // write the vector data to a temporary file
-            DocsWithFieldSet docsWithField = writeHalfFloatVectorData(
-                tempVectorData,
-                KnnVectorsWriter.MergedVectorValues.mergeFloatVectorValues(fieldInfo, mergeState)
-            );
-            CodecUtil.writeFooter(tempVectorData);
-            IOUtils.close(tempVectorData);
-
-            vectorDataInput = segmentWriteState.directory.openInput(tempVectorData.getName(), IOContext.DEFAULT);
-            // copy the temporary file vectors to the actual data file
-            vectorData.copyBytes(vectorDataInput, vectorDataInput.length() - CodecUtil.footerLength());
-            CodecUtil.retrieveChecksum(vectorDataInput);
-            long vectorDataLength = vectorData.getFilePointer() - vectorDataOffset;
-            writeMeta(fieldInfo, segmentWriteState.segmentInfo.maxDoc(), vectorDataOffset, vectorDataLength, docsWithField);
-
-            final IndexInput finalVectorDataInput = vectorDataInput;
-            vectorDataInput = null;
-
-            final int dim = fieldInfo.getVectorDimension();
-            final int byteSize = dim * Short.BYTES;
-            final int count = docsWithField.cardinality();
-            final KNNVectorAsCollectionOfHalfFloatsSerializer vectorSerializer = new KNNVectorAsCollectionOfHalfFloatsSerializer(dim);
-
-            OffHeapFloatVectorValues base = OffHeapFloatVectorValues.load(
-                fieldInfo.getVectorSimilarityFunction(),
-                vectorsScorer,
-                OrdToDocDISIReaderConfiguration.fromStoredMeta(finalVectorDataInput, count),
-                VectorEncoding.FLOAT32,
-                dim,
-                0L,
-                count * byteSize,
-                finalVectorDataInput
-            );
-
-            FloatVectorValues floatVectorValues = new FloatVectorValues() {
-                @Override
-                public int dimension() {
-                    return dim;
-                }
-
-                @Override
-                public int size() {
-                    return base.size();
-                }
-
-                @Override
-                public int ordToDoc(int ord) {
-                    return base.ordToDoc(ord);
-                }
-
-                @Override
-                public Bits getAcceptOrds(Bits bits) {
-                    return base.getAcceptOrds(bits);
-                }
-
-                @Override
-                public KnnVectorValues.DocIndexIterator iterator() {
-                    return base.iterator();
-                }
-
-                @Override
-                public float[] vectorValue(int ord) throws IOException {
-                    IndexInput slice = base.getSlice();
-                    slice.seek((long) ord * byteSize);
-                    byte[] half = new byte[byteSize];
-                    slice.readBytes(half, 0, half.length);
-                    return vectorSerializer.byteToFloatArray(half);
-                }
-
-                @Override
-                public FloatVectorValues copy() {
-                    return this;
-                }
-
-                @Override
-                public VectorScorer scorer(float[] query) throws IOException {
-                    return base.scorer(query);
-                }
-            };
-
-            final RandomVectorScorerSupplier randomVectorScorerSupplier = vectorsScorer.getRandomVectorScorerSupplier(
-                fieldInfo.getVectorSimilarityFunction(),
-                floatVectorValues
-            );
-
-            return new FlatCloseableRandomVectorScorerSupplier(() -> {
-                IOUtils.close(finalVectorDataInput);
-                segmentWriteState.directory.deleteFile(tempVectorData.getName());
-            }, docsWithField.cardinality(), randomVectorScorerSupplier);
-        } catch (Throwable t) {
-            KNNIOUtils.closeWhileSuppressingExceptions(t, vectorDataInput, tempVectorData);
-            KNNIOUtils.deleteFilesSuppressingExceptions(t, segmentWriteState.directory, tempVectorData.getName());
-            throw t;
-        }
+        throw new UnsupportedOperationException("Lucene ANN not implemented yet");
     }
 
     private void writeMeta(FieldInfo field, int maxDoc, long vectorDataOffset, long vectorDataLength, DocsWithFieldSet docsWithField)
