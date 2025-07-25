@@ -210,7 +210,7 @@ void knn_jni::commons::convertFP16ToFP32(knn_jni::JNIUtilInterface* jniUtil,
     // tail via NEON scalar broadcast
     for (; i < count; ++i) {
         __fp16 half = *reinterpret_cast<const __fp16*>(&src[i]);
-        float32x4_t fv = vcvt_f32_f16(vld1_dup_f16(half));
+        float32x4_t fv = vcvt_f32_f16(vdup_n_f16(half));
         dst[i] = vgetq_lane_f32(fv, 0);
     }
 
