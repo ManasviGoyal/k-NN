@@ -115,7 +115,6 @@ int knn_jni::commons::getIntegerMethodParameter(JNIEnv * env, knn_jni::JNIUtilIn
     return defaultValue;
 }
 
-// FP32 → FP16
 void knn_jni::commons::convertFP32ToFP16(knn_jni::JNIUtilInterface* jniUtil,
                                          JNIEnv* env,
                                          jfloatArray fp32Array,
@@ -131,42 +130,48 @@ void knn_jni::commons::convertFP32ToFP16(knn_jni::JNIUtilInterface* jniUtil,
     int i = 0;
 
 #if defined(__aarch64__)
-    // ARM NEON bulk 8-wide
+    // ARM NEON 8-wide unrolled loop
     for (; i + 8 <= count; i += 8) {
-        float32x4_t v0 = vld1q_f32(&src[i + 0]);
-        float32x4_t v1 = vld1q_f32(&src[i + 4]);
+        float32x4_t v0 = vld1q_f32(src + i);
+        float32x4_t v1 = vld1q_f32(src + i + 4);
         float16x4_t h0 = vcvt_f16_f32(v0);
         float16x4_t h1 = vcvt_f16_f32(v1);
-        vst1_f16(reinterpret_cast<__fp16*>(&dst[i + 0]), h0);
-        vst1_f16(reinterpret_cast<__fp16*>(&dst[i + 4]), h1);
+        vst1_f16(reinterpret_cast<__fp16*>(dst + i), h0);
+        vst1_f16(reinterpret_cast<__fp16*>(dst + i + 4), h1);
     }
-    // tail via NEON scalar broadcast
+    // Tail - scalar cast
     for (; i < count; ++i) {
-        float32x4_t sv = vdupq_n_f32(src[i]);
-        float16x4_t hv = vcvt_f16_f32(sv);
-        __fp16 lane = vget_lane_f16(hv, 0);
-        dst[i] = *reinterpret_cast<const uint16_t*>(&lane);
+        dst[i] = static_cast<uint16_t>(__fp16(src[i]));
     }
 
 #elif defined(__x86_64__)
   #if defined(__AVX512F__)
-    // x86 AVX-512 bulk 16-wide
     for (; i + 16 <= count; i += 16) {
+        if (i + 64 < count) {
+            _mm_prefetch(reinterpret_cast<const char*>(&src[i + 64]), _MM_HINT_T0);
+        }
         __m512 v = _mm512_loadu_ps(&src[i]);
         __m256i h = _mm512_cvtps_ph(v, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
         _mm256_storeu_si256(reinterpret_cast<__m256i*>(&dst[i]), h);
     }
   #elif defined(__AVX2__) && defined(__F16C__)
-    // x86 AVX2+F16C bulk 8-wide
-    for (; i + 8 <= count; i += 8) {
-        __m256 v = _mm256_loadu_ps(&src[i]);
-        __m128i h = _mm256_cvtps_ph(v, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(&dst[i]), h);
+    for (; i + 16 <= count; i += 16) {
+        if (i + 32 < count) {
+            _mm_prefetch(reinterpret_cast<const char*>(&src[i + 32]), _MM_HINT_T0);
+        }
+        __m256 v0 = _mm256_loadu_ps(&src[i]);
+        __m256 v1 = _mm256_loadu_ps(&src[i + 8]);
+
+        __m128i h0 = _mm256_cvtps_ph(v0, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+        __m128i h1 = _mm256_cvtps_ph(v1, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(&dst[i]), h0);
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(&dst[i + 8]), h1);
     }
+
   #else
     #error "x86_64 must support AVX512F or AVX2+F16C"
   #endif
-    // tail via F16C scalar
     for (; i < count; ++i) {
         __m128 sv = _mm_set_ss(src[i]);
         __m128i hv = _mm_cvtps_ph(sv, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
@@ -180,8 +185,6 @@ void knn_jni::commons::convertFP32ToFP16(knn_jni::JNIUtilInterface* jniUtil,
     env->ReleasePrimitiveArrayCritical(fp32Array, src_f32, JNI_ABORT);
 }
 
-
-// FP16 → FP32
 void knn_jni::commons::convertFP16ToFP32(knn_jni::JNIUtilInterface* jniUtil,
                                          JNIEnv* env,
                                          jbyteArray fp16Array,
@@ -198,25 +201,25 @@ void knn_jni::commons::convertFP16ToFP32(knn_jni::JNIUtilInterface* jniUtil,
     int i = 0;
 
 #if defined(__aarch64__)
-    // ARM NEON bulk 8-wide
+    // ARM NEON 8-wide unrolled loop
     for (; i + 8 <= count; i += 8) {
-        float16x4_t h0 = vld1_f16(reinterpret_cast<const __fp16*>(&src[i + 0]));
+        __builtin_prefetch(&src[i + 32], 0, 1);
+        __builtin_prefetch(&dst[i + 32], 1, 1);
+        float16x4_t h0 = vld1_f16(reinterpret_cast<const __fp16*>(&src[i]));
         float16x4_t h1 = vld1_f16(reinterpret_cast<const __fp16*>(&src[i + 4]));
         float32x4_t v0 = vcvt_f32_f16(h0);
         float32x4_t v1 = vcvt_f32_f16(h1);
-        vst1q_f32(&dst[i + 0], v0);
-        vst1q_f32(&dst[i + 4], v1);
+        vst1q_f32(dst + i, v0);
+        vst1q_f32(dst + i + 4, v1);
     }
-    // tail via NEON scalar broadcast
+
+    // Tail - scalar cast
     for (; i < count; ++i) {
-        __fp16 half = *reinterpret_cast<const __fp16*>(&src[i]);
-        float32x4_t fv = vcvt_f32_f16(vld1_dup_f16(half));
-        dst[i] = vgetq_lane_f32(fv, 0);
+        dst[i] = static_cast<float>(reinterpret_cast<const __fp16&>(src[i]));
     }
 
 #elif defined(__x86_64__)
   #if defined(__AVX512F__)
-    // x86 AVX-512 bulk 16-wide
     for (; i + 16 <= count; i += 16) {
         if (i + 64 < count) {
             _mm_prefetch(reinterpret_cast<const char*>(&src[i + 64]), _MM_HINT_T0);
@@ -226,19 +229,23 @@ void knn_jni::commons::convertFP16ToFP32(knn_jni::JNIUtilInterface* jniUtil,
         _mm512_storeu_ps(&dst[i], v);
     }
   #elif defined(__AVX2__) && defined(__F16C__)
-    // x86 AVX2+F16C bulk 8-wide
-    for (; i + 8 <= count; i += 8) {
+    for (; i + 16 <= count; i += 16) {
         if (i + 64 < count) {
             _mm_prefetch(reinterpret_cast<const char*>(&src[i + 64]), _MM_HINT_T0);
         }
-        __m128i h = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&src[i]));
-        __m256 v = _mm256_cvtph_ps(h);
-        _mm256_storeu_ps(&dst[i], v);
+
+        __m128i h0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&src[i]));
+        __m128i h1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&src[i + 8]));
+
+        __m256 v0 = _mm256_cvtph_ps(h0);
+        __m256 v1 = _mm256_cvtph_ps(h1);
+
+        _mm256_storeu_ps(&dst[i], v0);
+        _mm256_storeu_ps(&dst[i + 8], v1);
     }
   #else
     #error "x86_64 must support AVX512F or AVX2+F16C"
   #endif
-    // tail via F16C scalar
     for (; i < count; ++i) {
         __m128i h = _mm_cvtsi32_si128(src[i]);
         __m128 v = _mm_cvtph_ps(h);
