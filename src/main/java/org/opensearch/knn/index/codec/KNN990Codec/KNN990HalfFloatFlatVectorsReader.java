@@ -35,8 +35,8 @@ import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.RamUsageEstimator;
 import org.apache.lucene.util.hnsw.RandomVectorScorer;
-import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
 import org.opensearch.knn.index.codec.util.KNNIOUtils;
+import org.opensearch.knn.jni.JNICommons;
 
 /**
  * A FlatVectorsReader that reads half-precision (2-byte) FP16 data from .vec files,
@@ -192,9 +192,12 @@ public final class KNN990HalfFloatFlatVectorsReader extends FlatVectorsReader {
 
         final int dim = fe.dimension;
         final int byteSize = dim * Short.BYTES;
-        final KNNVectorAsCollectionOfHalfFloatsSerializer vectorSerializer = new KNNVectorAsCollectionOfHalfFloatsSerializer(dim);
 
         return new FloatVectorValues() {
+            private final byte[] scratchHalf = new byte[dim * Short.BYTES];
+            private final float[] scratchFloat = new float[dim];
+            private final IndexInput slice = base.getSlice();
+
             @Override
             public int dimension() {
                 return dim;
@@ -222,11 +225,10 @@ public final class KNN990HalfFloatFlatVectorsReader extends FlatVectorsReader {
 
             @Override
             public float[] vectorValue(int ord) throws IOException {
-                IndexInput slice = base.getSlice();
                 slice.seek((long) ord * byteSize);
-                byte[] half = new byte[byteSize];
-                slice.readBytes(half, 0, half.length);
-                return vectorSerializer.byteToFloatArray(half);
+                slice.readBytes(scratchHalf, 0, scratchHalf.length);
+                JNICommons.convertFP16ToFP32(scratchHalf, scratchFloat, dim, 0);
+                return scratchFloat;
             }
 
             @Override
