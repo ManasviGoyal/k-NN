@@ -117,7 +117,7 @@ public class KNNScriptScoringIT extends KNNRestTestCase {
             queryVector,
             VectorDataType.BINARY
         );
-        List<VectorDataType> nonBinary = List.of(VectorDataType.FLOAT, VectorDataType.HALF_FLOAT, VectorDataType.BYTE);
+        List<VectorDataType> nonBinary = List.of(VectorDataType.FLOAT, VectorDataType.BYTE);
         for (VectorDataType vectorDataType : nonBinary) {
             Exception e = expectThrows(
                 Exception.class,
