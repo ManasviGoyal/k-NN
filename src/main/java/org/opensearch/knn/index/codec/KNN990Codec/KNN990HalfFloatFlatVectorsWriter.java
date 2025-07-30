@@ -41,7 +41,7 @@ import org.apache.lucene.util.hnsw.UpdateableRandomVectorScorer;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.search.VectorScorer;
 import org.opensearch.knn.index.codec.util.KNNIOUtils;
-import org.opensearch.knn.jni.JNICommons;
+import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
 
 /**
  * Writes half float vector values to index segments.
@@ -49,6 +49,7 @@ import org.opensearch.knn.jni.JNICommons;
 public final class KNN990HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
 
     private static final long SHALLOW_RAM_BYTES_USED = RamUsageEstimator.shallowSizeOfInstance(KNN990HalfFloatFlatVectorsWriter.class);
+    private static final KNNVectorAsCollectionOfHalfFloatsSerializer SERIALIZER = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;
 
     private final SegmentWriteState segmentWriteState;
     private final IndexOutput meta, vectorData;
@@ -142,12 +143,12 @@ public final class KNN990HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
     private void writeField(FieldWriter<?> fieldData, int maxDoc) throws IOException {
         long vectorDataOffset = vectorData.alignFilePointer(Short.BYTES);
         int dim = fieldData.fieldInfo.getVectorDimension();
-        byte[] scratchHalf = new byte[dim * 2];  // Allocate once outside the loop
+        byte[] bytesBuffer = new byte[dim * 2];  // Allocate once outside the loop
 
         for (Object v : fieldData.vectors) {
             float[] vector = (float[]) v;
-            JNICommons.convertFP32ToFP16(vector, scratchHalf, dim);
-            vectorData.writeBytes(scratchHalf, scratchHalf.length);
+            SERIALIZER.floatToByteArray(vector, bytesBuffer, dim);
+            vectorData.writeBytes(bytesBuffer, bytesBuffer.length);
         }
         long vectorDataLength = vectorData.getFilePointer() - vectorDataOffset;
         writeMeta(fieldData.fieldInfo, maxDoc, vectorDataOffset, vectorDataLength, fieldData.docsWithField);
@@ -160,12 +161,12 @@ public final class KNN990HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
 
         long vectorDataOffset = vectorData.alignFilePointer(Short.BYTES);
         int dim = fieldData.fieldInfo.getVectorDimension();
-        byte[] scratchHalf = new byte[dim * 2];
+        byte[] bytesBuffer = new byte[dim * 2];
 
         for (int ordinal : ordMap) {
             float[] vector = (float[]) fieldData.vectors.get(ordinal);
-            JNICommons.convertFP32ToFP16(vector, scratchHalf, dim);
-            vectorData.writeBytes(scratchHalf, scratchHalf.length);
+            SERIALIZER.floatToByteArray(vector, bytesBuffer, dim);
+            vectorData.writeBytes(bytesBuffer, bytesBuffer.length);
         }
 
         long vectorDataLength = vectorData.getFilePointer() - vectorDataOffset;
@@ -194,12 +195,12 @@ public final class KNN990HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
         KnnVectorValues.DocIndexIterator iter = floatVectorValues.iterator();
 
         int dim = floatVectorValues.dimension();
-        byte[] scratchHalf = new byte[dim * 2];
+        byte[] bytesBuffer = new byte[dim * 2];
 
         for (int docV = iter.nextDoc(); docV != NO_MORE_DOCS; docV = iter.nextDoc()) {
             float[] value = floatVectorValues.vectorValue(iter.index());
-            JNICommons.convertFP32ToFP16(value, scratchHalf, dim);
-            output.writeBytes(scratchHalf, scratchHalf.length);
+            SERIALIZER.floatToByteArray(value, bytesBuffer, dim);
+            output.writeBytes(bytesBuffer, bytesBuffer.length);
             docsWithField.add(docV);
         }
 
@@ -243,8 +244,8 @@ public final class KNN990HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
             );
 
             FloatVectorValues floatVectorValues = new FloatVectorValues() {
-                private final byte[] scratchHalf = new byte[dim * 2];
-                private final float[] scratchFloat = new float[dim];
+                private final byte[] bytesBuffer = new byte[dim * 2];
+                private final float[] floatBuffer = new float[dim];
                 private final IndexInput slice = base.getSlice();
 
                 @Override
@@ -275,9 +276,9 @@ public final class KNN990HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
                 @Override
                 public float[] vectorValue(int ord) throws IOException {
                     slice.seek((long) ord * byteSize);
-                    slice.readBytes(scratchHalf, 0, scratchHalf.length);
-                    JNICommons.convertFP16ToFP32(scratchHalf, scratchFloat, dim, 0);
-                    return scratchFloat;
+                    slice.readBytes(bytesBuffer, 0, bytesBuffer.length);
+                    SERIALIZER.byteToFloatArray(bytesBuffer, floatBuffer, dim, 0);
+                    return floatBuffer;
                 }
 
                 @Override

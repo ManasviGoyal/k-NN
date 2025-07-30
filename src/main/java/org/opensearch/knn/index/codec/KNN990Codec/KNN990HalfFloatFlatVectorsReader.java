@@ -35,8 +35,8 @@ import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.RamUsageEstimator;
 import org.apache.lucene.util.hnsw.RandomVectorScorer;
+import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
 import org.opensearch.knn.index.codec.util.KNNIOUtils;
-import org.opensearch.knn.jni.JNICommons;
 
 /**
  * A FlatVectorsReader that reads half-precision (2-byte) FP16 data from .vec files,
@@ -44,6 +44,7 @@ import org.opensearch.knn.jni.JNICommons;
  */
 public final class KNN990HalfFloatFlatVectorsReader extends FlatVectorsReader {
     private static final long SHALLOW_SIZE = RamUsageEstimator.shallowSizeOfInstance(KNN990HalfFloatFlatVectorsReader.class);
+    private static final KNNVectorAsCollectionOfHalfFloatsSerializer SERIALIZER = KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE;
 
     private final IntObjectHashMap<FieldEntry> fields = new IntObjectHashMap<>();
     private final IndexInput vectorData;
@@ -194,8 +195,8 @@ public final class KNN990HalfFloatFlatVectorsReader extends FlatVectorsReader {
         final int byteSize = dim * Short.BYTES;
 
         return new FloatVectorValues() {
-            private final byte[] scratchHalf = new byte[dim * Short.BYTES];
-            private final float[] scratchFloat = new float[dim];
+            private final byte[] bytesBuffer = new byte[dim * 2];
+            private final float[] floatBuffer = new float[dim];
             private final IndexInput slice = base.getSlice();
 
             @Override
@@ -226,9 +227,9 @@ public final class KNN990HalfFloatFlatVectorsReader extends FlatVectorsReader {
             @Override
             public float[] vectorValue(int ord) throws IOException {
                 slice.seek((long) ord * byteSize);
-                slice.readBytes(scratchHalf, 0, scratchHalf.length);
-                JNICommons.convertFP16ToFP32(scratchHalf, scratchFloat, dim, 0);
-                return scratchFloat;
+                slice.readBytes(bytesBuffer, 0, bytesBuffer.length);
+                SERIALIZER.byteToFloatArray(bytesBuffer, floatBuffer, dim, 0);
+                return floatBuffer;
             }
 
             @Override
