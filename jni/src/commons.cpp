@@ -200,6 +200,9 @@ void knn_jni::commons::convertFP16ToFP32(knn_jni::JNIUtilInterface* jniUtil,
 #if defined(__aarch64__)
     // ARM NEON bulk 8-wide
     for (; i + 8 <= count; i += 8) {
+        if (i + 64 < count) {
+            __builtin_prefetch(&src[i + 64], 0, 1);
+        }
         float16x4_t h0 = vld1_f16(reinterpret_cast<const __fp16*>(&src[i + 0]));
         float16x4_t h1 = vld1_f16(reinterpret_cast<const __fp16*>(&src[i + 4]));
         float32x4_t v0 = vcvt_f32_f16(h0);
@@ -207,11 +210,9 @@ void knn_jni::commons::convertFP16ToFP32(knn_jni::JNIUtilInterface* jniUtil,
         vst1q_f32(&dst[i + 0], v0);
         vst1q_f32(&dst[i + 4], v1);
     }
-    // tail via NEON scalar broadcast
+    // tail processing
     for (; i < count; ++i) {
-        __fp16 half = *reinterpret_cast<const __fp16*>(&src[i]);
-        float32x4_t fv = vcvt_f32_f16(vdup_n_f16(half));
-        dst[i] = vgetq_lane_f32(fv, 0);
+        dst[i] = static_cast<float>(reinterpret_cast<const __fp16&>(src[i]));
     }
 
 #elif defined(__x86_64__)
