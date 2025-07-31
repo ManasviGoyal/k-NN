@@ -198,19 +198,39 @@ void knn_jni::commons::convertFP16ToFP32(knn_jni::JNIUtilInterface* jniUtil,
     int i = 0;
 
 #if defined(__aarch64__)
-    // ARM NEON bulk 8-wide
-    for (; i + 8 <= count; i += 8) {
-        if (i + 64 < count) {
-            __builtin_prefetch(&src[i + 64], 0, 1);
-        }
+    // Loop unrolling and manual prefetch
+    for (; i + 16 <= count; i += 16) {
+        __builtin_prefetch(&src[i + 64], 0, 1);  // Prefetch next cache line
+
         float16x4_t h0 = vld1_f16(reinterpret_cast<const __fp16*>(&src[i + 0]));
         float16x4_t h1 = vld1_f16(reinterpret_cast<const __fp16*>(&src[i + 4]));
-        float32x4_t v0 = vcvt_f32_f16(h0);
-        float32x4_t v1 = vcvt_f32_f16(h1);
-        vst1q_f32(&dst[i + 0], v0);
-        vst1q_f32(&dst[i + 4], v1);
+        float16x4_t h2 = vld1_f16(reinterpret_cast<const __fp16*>(&src[i + 8]));
+        float16x4_t h3 = vld1_f16(reinterpret_cast<const __fp16*>(&src[i + 12]));
+
+        float32x4_t f0 = vcvt_f32_f16(h0);
+        float32x4_t f1 = vcvt_f32_f16(h1);
+        float32x4_t f2 = vcvt_f32_f16(h2);
+        float32x4_t f3 = vcvt_f32_f16(h3);
+
+        vst1q_f32(&dst[i + 0], f0);
+        vst1q_f32(&dst[i + 4], f1);
+        vst1q_f32(&dst[i + 8], f2);
+        vst1q_f32(&dst[i + 12], f3);
     }
-    // tail processing
+
+    // Remaining batch of 8
+    for (; i + 8 <= count; i += 8) {
+        float16x4_t h0 = vld1_f16(reinterpret_cast<const __fp16*>(&src[i + 0]));
+        float16x4_t h1 = vld1_f16(reinterpret_cast<const __fp16*>(&src[i + 4]));
+
+        float32x4_t f0 = vcvt_f32_f16(h0);
+        float32x4_t f1 = vcvt_f32_f16(h1);
+
+        vst1q_f32(&dst[i + 0], f0);
+        vst1q_f32(&dst[i + 4], f1);
+    }
+
+    // Tail: Scalar fallback using native __fp16 cast
     for (; i < count; ++i) {
         dst[i] = static_cast<float>(reinterpret_cast<const __fp16&>(src[i]));
     }
