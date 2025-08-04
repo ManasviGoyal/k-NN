@@ -1,4 +1,3 @@
-
 /*
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -22,6 +21,7 @@ public class SIMDLoader {
     static {
         AccessController.doPrivileged((PrivilegedAction<Void>) () -> {
             try {
+                // Load SIMD library based on support and user flags
                 if (!isAVX512SPRFusedDisabled() && PlatformUtils.isAVX512SPRSupportedBySystem()) {
                     System.loadLibrary(KNNConstants.SIMD_AVX512_SPR_JNI_LIBRARY_NAME);
                 } else if (!isAVX512Disabled() && PlatformUtils.isAVX512SupportedBySystem()) {
@@ -32,14 +32,14 @@ public class SIMDLoader {
                     System.loadLibrary(KNNConstants.SIMD_JNI_LIBRARY_NAME);
                 }
             } catch (UnsatisfiedLinkError e) {
-                throw new RuntimeException("Failed to load native SIMD library", e);
+                throw new RuntimeException("[KNN] Failed to load native SIMD library", e);
             }
             return null;
         });
     }
 
     public static void ensureLoaded() {
-        // Triggers the static block if not already loaded
+        // Trigger static block
     }
 
     private static boolean isAVX512Disabled() {

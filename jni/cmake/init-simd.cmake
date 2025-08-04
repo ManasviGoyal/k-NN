@@ -3,7 +3,7 @@
 
 include(CheckCXXSourceCompiles)
 
-# ------------------ Handle user-overrides or set default ------------------
+# Handle user overrides
 if(NOT DEFINED AVX2_ENABLED)
     set(AVX2_ENABLED true)
 endif()
@@ -24,13 +24,15 @@ if(NOT DEFINED AVX512_SPR_ENABLED)
     endif()
 endif()
 
-# ------------------ SIMD Detection ----------------------------------
-
+# SIMD Detection
 set(SIMD_OPT_LEVEL "")
 set(SIMD_FLAGS "")
 
-# AVX512 detection (if enabled)
+# AVX512
 if(AVX512_ENABLED)
+    file(READ "/proc/cpuinfo" CPUINFO)
+    string(FIND "${CPUINFO}" "avx512f" AVX512_CPU_FOUND)
+
     set(CMAKE_REQUIRED_FLAGS "-mavx512f")
     check_cxx_source_compiles("
         #include <immintrin.h>
@@ -39,19 +41,25 @@ if(AVX512_ENABLED)
             __m256i h = _mm512_cvtps_ph(x, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
             (void)h;
             return 0;
-        }" HAVE_X86_AVX512)
+        }" HAVE_AVX512_COMPILER)
     unset(CMAKE_REQUIRED_FLAGS)
 
-    if(HAVE_X86_AVX512)
-        message(STATUS "AVX512F SIMD support detected")
+    if(AVX512_CPU_FOUND GREATER -1 AND HAVE_AVX512_COMPILER)
+        message(STATUS "[SIMD] AVX512F supported by CPU and compiler")
         set(SIMD_OPT_LEVEL "avx512")
         set(SIMD_FLAGS -mavx512f)
         add_definitions(-DKNN_HAVE_AVX512)
+    else()
+        message(STATUS "[SIMD] AVX512 skipped: CPU or compiler unsupported")
     endif()
 endif()
 
-# AVX2 + F16C detection (if enabled and AVX512 wasn't selected)
+# AVX2 + F16C
 if(AVX2_ENABLED AND (SIMD_OPT_LEVEL STREQUAL ""))
+    file(READ "/proc/cpuinfo" CPUINFO)
+    string(FIND "${CPUINFO}" "avx2" AVX2_CPU_FOUND)
+    string(FIND "${CPUINFO}" "f16c" F16C_CPU_FOUND)
+
     set(CMAKE_REQUIRED_FLAGS "-mavx2 -mf16c")
     check_cxx_source_compiles("
         #include <immintrin.h>
@@ -60,19 +68,21 @@ if(AVX2_ENABLED AND (SIMD_OPT_LEVEL STREQUAL ""))
             __m128i h = _mm_cvtps_ph(x, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
             (void)h;
             return 0;
-        }" HAVE_X86_F16C)
+        }" HAVE_AVX2_COMPILER)
     unset(CMAKE_REQUIRED_FLAGS)
 
-    if(HAVE_X86_F16C)
-        message(STATUS "AVX2 + F16C SIMD support detected")
+    if(AVX2_CPU_FOUND GREATER -1 AND F16C_CPU_FOUND GREATER -1 AND HAVE_AVX2_COMPILER)
+        message(STATUS "[SIMD] AVX2 + F16C supported by CPU and compiler")
         set(SIMD_OPT_LEVEL "avx2")
         set(SIMD_FLAGS -mavx2 -mf16c)
         add_definitions(-DKNN_HAVE_F16C)
+    else()
+        message(STATUS "[SIMD] AVX2 skipped: CPU or compiler unsupported")
     endif()
 endif()
 
-# ARM NEON (if on aarch64 and nothing selected yet)
-if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64" AND (SIMD_OPT_LEVEL STREQUAL ""))
+# ARM NEON
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64" AND (SIMD_OPT_LEVEL STREQUAL ""))
     check_cxx_source_compiles("
         #include <arm_neon.h>
         int main() {
@@ -80,31 +90,27 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64" AND (SIMD_OPT_LEVEL STREQUAL ""))
             float16x4_t h = vcvt_f16_f32(v);
             (void)h;
             return 0;
-        }" HAVE_ARM_FP16)
+        }" HAVE_NEON_COMPILER)
 
-    if(HAVE_ARM_FP16)
-        message(STATUS "ARM NEON FP16 SIMD support detected")
+    if(HAVE_NEON_COMPILER)
+        message(STATUS "[SIMD] ARM NEON FP16 supported by compiler (on ARM)")
         set(SIMD_OPT_LEVEL "neon")
-        set(SIMD_FLAGS -march=armv8.4-a+fp16)
+        set(SIMD_FLAGS "-march=armv8.4-a+fp16")
         add_definitions(-DKNN_HAVE_ARM_FP16)
+    else()
+        message(STATUS "[SIMD] NEON skipped: compiler unsupported")
     endif()
 endif()
 
-# Fallback — if nothing selected
+# Fallback
 if(SIMD_OPT_LEVEL STREQUAL "")
-    message(WARNING "No SIMD support detected or all SIMD options disabled. Falling back to default encoding/decoding in Java.")
+    message(WARNING "[SIMD] No SIMD support detected or all SIMD options disabled. Falling back to Java encoding/decoding.")
     set(SIMD_OPT_LEVEL "generic")
     set(SIMD_FLAGS "")
 endif()
 
-# Common optimization flags
+# Always-used flags
 set(FP16_SIMD_FLAGS "-O3" "-fPIC")
 
-# Suffix for library name (used in CMakeLists.txt)
-if(SIMD_OPT_LEVEL STREQUAL "avx512")
-    set(SIMD_LIB_SUFFIX "_avx512")
-elseif(SIMD_OPT_LEVEL STREQUAL "avx2")
-    set(SIMD_LIB_SUFFIX "_avx2")
-else()
-    set(SIMD_LIB_SUFFIX "")
-endif()
+# Debug summary
+message(STATUS "[SIMD] Selected SIMD_OPT_LEVEL = ${SIMD_OPT_LEVEL}")
