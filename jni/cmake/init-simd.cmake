@@ -1,5 +1,7 @@
+#
 # SPDX-License-Identifier: Apache-2.0
 # Copyright OpenSearch Contributors
+#
 
 include(CheckCXXSourceCompiles)
 
@@ -38,7 +40,7 @@ if(AVX512_ENABLED)
     file(READ "/proc/cpuinfo" CPUINFO)
     string(FIND "${CPUINFO}" "avx512f" AVX512_CPU_FOUND)
 
-    set(CMAKE_REQUIRED_FLAGS "-mavx512f")
+    set(CMAKE_REQUIRED_FLAGS "-mavx512f -mf16c")
     check_cxx_source_compiles("
         #include <immintrin.h>
         int main() {
@@ -52,7 +54,7 @@ if(AVX512_ENABLED)
     if(AVX512_CPU_FOUND GREATER -1 AND HAVE_AVX512_COMPILER)
         message(STATUS "[SIMD] AVX512F supported by CPU and compiler")
         set(SIMD_OPT_LEVEL "avx512")
-        set(SIMD_FLAGS "-mavx512f")
+        set(SIMD_FLAGS -mavx512f -mf16c)
         set(KNN_HAVE_AVX512 ON)
         add_definitions(-DKNN_HAVE_AVX512)
     else()
@@ -80,7 +82,7 @@ if(AVX2_ENABLED AND (SIMD_OPT_LEVEL STREQUAL ""))
     if(AVX2_CPU_FOUND GREATER -1 AND F16C_CPU_FOUND GREATER -1 AND HAVE_AVX2_COMPILER)
         message(STATUS "[SIMD] AVX2 + F16C supported by CPU and compiler")
         set(SIMD_OPT_LEVEL "avx2")
-        set(SIMD_FLAGS "-mavx2 -mf16c")
+        set(SIMD_FLAGS -mavx2 -mf16c)
         set(KNN_HAVE_F16C ON)
         add_definitions(-DKNN_HAVE_F16C)
     else()
@@ -102,7 +104,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64" AND (SIMD_OPT_LEVEL STREQUAL ""))
     if(HAVE_NEON_COMPILER)
         message(STATUS "[SIMD] ARM NEON FP16 supported by compiler (on ARM)")
         set(SIMD_OPT_LEVEL "neon")
-        set(SIMD_FLAGS "-march=armv8.4-a+fp16")
+        set(SIMD_FLAGS -march=armv8.4-a+fp16)
         set(KNN_HAVE_ARM_FP16 ON)
         add_definitions(-DKNN_HAVE_ARM_FP16)
     else()
