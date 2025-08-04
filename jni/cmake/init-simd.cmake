@@ -119,6 +119,3 @@ endif()
 
 # Always-used flags
 set(FP16_SIMD_FLAGS "-O3" "-fPIC")
-
-# Debug summary
-message(STATUS "[SIMD] Selected SIMD_OPT_LEVEL = ${SIMD_OPT_LEVEL}")
