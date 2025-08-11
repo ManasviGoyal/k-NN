@@ -17,10 +17,14 @@
 #include "jni_util.h"
 #include "decoding/decoding.h"
 
+// Returns JNI_FALSE to indicate that SIMD acceleration is not supported
+// to fall back to the Java implementation.
 jboolean knn_jni::decoding::isSIMDSupported() {
     return JNI_FALSE;
 }
 
+// Stub implementation for FP16 to FP32 conversion in the absence of SIMD support.
+// Always returns JNI_FALSE to signal that SIMD-based conversion is not available.
 jboolean knn_jni::decoding::convertFP16ToFP32(knn_jni::JNIUtilInterface *jniUtil, JNIEnv*, jbyteArray, jfloatArray, jint, jint) {
     return JNI_FALSE;
 }
