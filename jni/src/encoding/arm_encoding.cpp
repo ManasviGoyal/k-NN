@@ -19,15 +19,24 @@
 #include "jni_util.h"
 #include "encoding/encoding.h"
 
+// Returns JNI_TRUE to indicate that SIMD support is enabled at compile time for ARM architecture.
 jboolean knn_jni::encoding::isSIMDSupported() {
     return JNI_TRUE;
 }
 
+/*
+ * This function implements architecture-specific SIMD optimizations for converting FP32 values to FP16
+ * using ARM NEON vector intrinsics. The conversion path is selected at compile time via preprocessor macros.
+ * All of these intrinsics and instruction sets are documented in the official Arm NEON Intrinsics Reference:
+ * https://developer.arm.com/architectures/instruction-sets/simd-isas/neon/intrinsics
+ */
 jboolean knn_jni::encoding::convertFP32ToFP16(knn_jni::JNIUtilInterface *jniUtil, JNIEnv* env, jfloatArray fp32Array, jbyteArray fp16Array, jint count) {
     // Return early if there's nothing to convert
     if (count <= 0) return JNI_TRUE;
 
+    // Pin the source Java float[] and get raw access to its memory
     jfloat* src_f32 = reinterpret_cast<jfloat*>(jniUtil->GetPrimitiveArrayCritical(env, fp32Array, nullptr));
+    // Pin the destination Java byte[] and get raw access to its memory
     jbyte* dst_bytes = reinterpret_cast<jbyte*>(jniUtil->GetPrimitiveArrayCritical(env, fp16Array, nullptr));
 
     // When 'release_arrays' goes out of scope, its lambda will run to ensure that the
@@ -39,6 +48,7 @@ jboolean knn_jni::encoding::convertFP32ToFP16(knn_jni::JNIUtilInterface *jniUtil
         jniUtil->ReleasePrimitiveArrayCritical(env, fp32Array, src_f32, JNI_ABORT);
     }};
 
+    // Ensure that the starting address is aligned to 2 bytes (required for correct uint16_t interpretation)
     if ((reinterpret_cast<uintptr_t>(dst_bytes) % alignof(uint16_t)) != 0) {
         // release_arrays will cleanup the arrays automatically
         return JNI_FALSE;
@@ -48,17 +58,27 @@ jboolean knn_jni::encoding::convertFP32ToFP16(knn_jni::JNIUtilInterface *jniUtil
     uint16_t* dst = reinterpret_cast<uint16_t*>(dst_bytes);
 
     int i = 0;
-    // ARM NEON bulk 8-wide
+    // Each loop iteration handles 8 FP32 values by processing two 128-bit NEON registers,
+    // each containing 4 FP32 values. These are converted into two sets of 4 FP16 values and stored.
     for (; i + 8 <= count; i += 8) {
+        // Load 4 FP32 values (16 bytes) into 128-bit NEON register
         float32x4_t v0 = vld1q_f32(&src[i]);
+        // Load next 4 FP32 values into another 128-bit NEON register
         float32x4_t v1 = vld1q_f32(&src[i + 4]);
+        // Convert 4 FP32 values in v0 to 4 FP16 values using NEON half-precision conversion
+        // Rounds to nearest even to match IEEE-754 behavior
         float16x4_t h0 = vcvt_f16_f32(v0);
+        // Convert next 4 FP32 values
         float16x4_t h1 = vcvt_f16_f32(v1);
+        // Store 4 FP16 values (8 bytes) from h0 into memory
         vst1_f16(reinterpret_cast<__fp16*>(&dst[i]), h0);
+        // Store next 4 FP16 values
         vst1_f16(reinterpret_cast<__fp16*>(&dst[i + 4]), h1);
     }
-    // tail via NEON scalar broadcast
+    // Scalar conversion for remaining elements (count not divisible by 8)
     for (; i < count; ++i) {
+        // Convert single FP32 to FP16 using scalar cast.
+        // __fp16 is a native C++ type on ARM platforms supporting FP16.
         reinterpret_cast<__fp16*>(dst)[i] = static_cast<__fp16>(src[i]);
     }
 

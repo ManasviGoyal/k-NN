@@ -9,6 +9,12 @@
  * GitHub history for details.
  */
 
+/* Selects the appropriate SIMD-optimized implementation of FP16 encoding
+ * based on the target platform and available instruction sets at compile time.
+ * - On ARM64 with FP16 support, includes arm_encoding.cpp
+ * - On x86_64 with AVX512 (SPR or general) or AVX2 + F16C, includes x86_encoding.cpp
+ * - Otherwise, falls back to the Java implementation in default_encoding.cpp
+ */
 #if defined(__aarch64__) && defined(KNN_HAVE_ARM_FP16)
   #include "arm_encoding.cpp"
 #elif defined(__x86_64__) && (defined(KNN_HAVE_AVX512_SPR) || defined(KNN_HAVE_AVX512) || defined(KNN_HAVE_AVX2_F16C))

@@ -19,10 +19,17 @@
 #include "jni_util.h"
 #include "encoding/encoding.h"
 
+// Returns JNI_TRUE to indicate that SIMD support is enabled at compile time for x86 architecture.
 jboolean knn_jni::encoding::isSIMDSupported() {
     return JNI_TRUE;
 }
 
+/*
+ * This function implements architecture-specific SIMD optimizations for converting FP32 values to FP16.
+ * using x86_64 vector intrinsics. The conversion path is selected at compile time via preprocessor macros.
+ * All of these intrinsics and instruction sets are documented in the official Intel Intrinsics Guide:
+ * https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html
+ */
 jboolean knn_jni::encoding::convertFP32ToFP16(knn_jni::JNIUtilInterface *jniUtil, JNIEnv* env, jfloatArray fp32Array, jbyteArray fp16Array, jint count) {
     // Return early if there's nothing to convert
     if (count <= 0) return JNI_TRUE;
@@ -66,6 +73,7 @@ jboolean knn_jni::encoding::convertFP32ToFP16(knn_jni::JNIUtilInterface *jniUtil
         __m512 v1 = _mm512_loadu_ps(&src[i + 16]);
 
         // Convert to two __m512h halves (each holds 16 FP16 values)
+        // _mm512_cvtps_ph is only available on Intel Sapphire Rapids and newer CPUs with AVX512FP16.
         __m512h h0 = _mm512_cvtps_ph(v0);
         __m512h h1 = _mm512_cvtps_ph(v1);
 
@@ -75,20 +83,36 @@ jboolean knn_jni::encoding::convertFP32ToFP16(knn_jni::JNIUtilInterface *jniUtil
     }
 #elif defined(KNN_HAVE_AVX512)
     for (; i + 16 <= count; i += 16) {
+        // Load 16 float values (16 x 32 bits = 512 bits) into a __m512 register.
+        // AVX512 registers are 512 bits wide, so they can hold 16 float32 values at once.
         __m512 v = _mm512_loadu_ps(&src[i]);
+        // Convert the 16 FP32 values to FP16 and pack them into a 256-bit register (__m256i).
+        // This uses round-to-nearest-even and disables floating-point exceptions.
         __m256i h = _mm512_cvtps_ph(v, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+        // Store the 16 packed FP16 values (256 bits) to memory.
         _mm256_storeu_si256(reinterpret_cast<__m256i*>(&dst[i]), h);
     }
 #elif defined(KNN_HAVE_AVX2_F16C)
     for (; i + 8 <= count; i += 8) {
+        // Load 8 float values (8 x 32 bits = 256 bits) into a __m256 register.
+        // F16C uses 256-bit registers to convert 8 FP32 values to FP16 in parallel.
         __m256 v = _mm256_loadu_ps(&src[i]);
+        // Convert 8 FP32 values to FP16 and pack them into a 128-bit register (__m128i).
+        // This uses round-to-nearest-even and disables floating-point exceptions.
         __m128i h = _mm256_cvtps_ph(v, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+        // Stores 8 packed FP16 values (128 bits) into memory at &dst[i] using unaligned access.
         _mm_storeu_si128(reinterpret_cast<__m128i*>(&dst[i]), h);
     }
 #endif
+    // Scalar fallback using F16C for remaining elements.
+    // This path is taken if any elements remain after vectorized processing.
+    // Converts one FP32 float at a time to FP16.
     for (; i < count; ++i) {
+        // Load scalar float into the lowest part of __m128 register.
         __m128 sv = _mm_set_ss(src[i]);
+        // Convert FP32 to FP16
         __m128i hv = _mm_cvtps_ph(sv, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+        // Extract the lowest 16 bits as uint16_t
         dst[i] = static_cast<uint16_t>(_mm_cvtsi128_si32(hv));
     }
 
