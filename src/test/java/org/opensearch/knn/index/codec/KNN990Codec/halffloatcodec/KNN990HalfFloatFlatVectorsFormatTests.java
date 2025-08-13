@@ -6,14 +6,40 @@
 package org.opensearch.knn.index.codec.KNN990Codec.halffloatcodec;
 
 import lombok.SneakyThrows;
+import org.apache.lucene.codecs.Codec;
 import org.apache.lucene.codecs.CodecUtil;
-import org.apache.lucene.codecs.hnsw.*;
+import org.apache.lucene.codecs.hnsw.DefaultFlatVectorScorer;
+import org.apache.lucene.codecs.hnsw.FlatVectorsReader;
+import org.apache.lucene.codecs.hnsw.FlatVectorsWriter;
+import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
-import org.apache.lucene.index.*;
+import org.apache.lucene.document.FieldType;
+import org.apache.lucene.document.KnnFloatVectorField;
+import org.apache.lucene.index.FieldInfo;
+import org.apache.lucene.index.FieldInfos;
+import org.apache.lucene.index.FloatVectorValues;
+import org.apache.lucene.index.IndexOptions;
+import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.LeafReader;
+import org.apache.lucene.index.NoMergePolicy;
+import org.apache.lucene.index.SegmentInfo;
+import org.apache.lucene.index.SegmentReadState;
+import org.apache.lucene.index.SegmentReader;
+import org.apache.lucene.index.SegmentWriteState;
+import org.apache.lucene.index.SerialMergeScheduler;
+import org.apache.lucene.index.VectorEncoding;
+import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.Sort;
+import org.apache.lucene.store.Directory;
+import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.IndexOutput;
+import org.apache.lucene.tests.index.RandomIndexWriter;
 import org.apache.lucene.tests.store.BaseDirectoryWrapper;
 import org.apache.lucene.util.InfoStream;
+import org.apache.lucene.util.Version;
+
 import org.junit.After;
 import org.junit.Assert;
 import org.mockito.MockedStatic;
@@ -21,17 +47,6 @@ import org.mockito.Mockito;
 import org.mockito.stubbing.Answer;
 import org.opensearch.common.lucene.Lucene;
 import org.opensearch.knn.KNNTestCase;
-import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.IOContext;
-import org.apache.lucene.document.Document;
-import org.apache.lucene.document.FieldType;
-import org.apache.lucene.document.KnnFloatVectorField;
-import org.apache.lucene.tests.index.RandomIndexWriter;
-import org.apache.lucene.util.Version;
-import org.apache.lucene.codecs.Codec;
-import org.apache.lucene.search.Sort;
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.index.VectorEncoding;
 import org.opensearch.knn.common.KNNConstants;
 import org.opensearch.knn.index.KNNSettings;
 import org.opensearch.knn.index.SpaceType;
@@ -67,7 +82,7 @@ public class KNN990HalfFloatFlatVectorsFormatTests extends KNNTestCase {
     }
 
     @SneakyThrows
-    public void testNativeEngineVectorFormat_whenMultipleVectorFieldIndexed_halfFloat_thenSuccess() {
+    public void testHalfFloatVectorFormat_whenMultipleVectorFieldIndexed_halfFloat_thenSuccess() {
         setup();
         float[] floatVector = { 1.0f, 3.0f, 4.0f };
         float[] halfFloatVector = { 2.0f, 4.0f, 8.0f };
@@ -180,7 +195,7 @@ public class KNN990HalfFloatFlatVectorsFormatTests extends KNNTestCase {
         Mockito.when(mockedFlatVectorsFormat.fieldsReader(mockedSegmentReadState)).thenReturn(Mockito.mock(FlatVectorsReader.class));
         Mockito.when(mockedFlatVectorsFormat.fieldsWriter(mockedSegmentWriteState)).thenReturn(Mockito.mock(FlatVectorsWriter.class));
 
-        final KNN990HalfFloatFlatVectorsFormat flatVectorsFormat = new KNN990HalfFloatFlatVectorsFormat();
+        final KNN990HalfFloatFlatVectorsFormat halfFloatFlatVectorsFormat = new KNN990HalfFloatFlatVectorsFormat();
 
         try (MockedStatic<CodecUtil> mockedStaticCodecUtil = Mockito.mockStatic(CodecUtil.class)) {
             mockedStaticCodecUtil.when(
@@ -188,9 +203,12 @@ public class KNN990HalfFloatFlatVectorsFormatTests extends KNNTestCase {
             ).thenAnswer((Answer<Void>) invocation -> null);
             mockedStaticCodecUtil.when(() -> CodecUtil.retrieveChecksum(any(IndexInput.class)))
                 .thenAnswer((Answer<Void>) invocation -> null);
-            Assert.assertTrue(flatVectorsFormat.fieldsReader(mockedSegmentReadState) instanceof FlatVectorsReader);
 
-            Assert.assertTrue(flatVectorsFormat.fieldsWriter(mockedSegmentWriteState) instanceof FlatVectorsWriter);
+            Object reader = halfFloatFlatVectorsFormat.fieldsReader(mockedSegmentReadState);
+            Object writer = halfFloatFlatVectorsFormat.fieldsWriter(mockedSegmentWriteState);
+
+            Assert.assertNotNull(reader);
+            Assert.assertNotNull(writer);
         }
     }
 

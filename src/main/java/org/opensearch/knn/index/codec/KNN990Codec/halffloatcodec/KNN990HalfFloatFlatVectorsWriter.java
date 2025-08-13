@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import lombok.Getter;
 import org.apache.lucene.codecs.CodecUtil;
 import org.apache.lucene.codecs.KnnVectorsWriter;
 import org.apache.lucene.codecs.hnsw.FlatFieldVectorsWriter;
@@ -45,6 +46,7 @@ import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSeri
  * {@link org.apache.lucene.codecs.lucene99.Lucene99FlatVectorsWriter} with changes to support writing
  * half float vector values to index segments as 2 bytes.
  */
+@Getter
 public final class KNN990HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
 
     private static final long SHALLOW_RAM_BYTES_USED = RamUsageEstimator.shallowSizeOfInstance(KNN990HalfFloatFlatVectorsWriter.class);
@@ -189,7 +191,7 @@ public final class KNN990HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
     /**
      * Writes the half float vector values to the output and returns a set of documents that contains vectors.
      */
-    private static DocsWithFieldSet writeHalfFloatVectorData(IndexOutput output, FloatVectorValues floatVectorValues) throws IOException {
+    static DocsWithFieldSet writeHalfFloatVectorData(IndexOutput output, FloatVectorValues floatVectorValues) throws IOException {
         DocsWithFieldSet docsWithField = new DocsWithFieldSet();
         KnnVectorValues.DocIndexIterator iter = floatVectorValues.iterator();
 
