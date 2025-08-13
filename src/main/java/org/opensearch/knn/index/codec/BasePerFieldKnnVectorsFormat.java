@@ -19,7 +19,7 @@ import org.opensearch.knn.index.codec.KNN990Codec.NativeEngines990KnnVectorsForm
 import org.opensearch.knn.index.codec.nativeindex.NativeIndexBuildStrategyFactory;
 import org.opensearch.knn.index.codec.params.KNNScalarQuantizedVectorsFormatParams;
 import org.opensearch.knn.index.codec.params.KNNVectorsFormatParams;
-import org.opensearch.knn.index.codec.KNN990Codec.KNN990HalfFloatFlatVectorsFormat;
+import org.opensearch.knn.index.codec.KNN990Codec.halffloatcodec.KNN990HalfFloatFlatVectorsFormat;
 import org.opensearch.knn.index.engine.KNNEngine;
 import org.opensearch.knn.index.engine.KNNMethodContext;
 import org.opensearch.knn.index.mapper.KNNMappingConfig;

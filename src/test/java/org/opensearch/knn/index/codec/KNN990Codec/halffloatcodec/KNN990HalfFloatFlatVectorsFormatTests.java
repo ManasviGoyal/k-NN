@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package org.opensearch.knn.index.codec.KNN990Codec;
+package org.opensearch.knn.index.codec.KNN990Codec.halffloatcodec;
 
 import lombok.SneakyThrows;
 import org.apache.lucene.codecs.CodecUtil;
@@ -113,8 +113,8 @@ public class KNN990HalfFloatFlatVectorsFormatTests extends KNNTestCase {
 
     public void testFormatName_withValidInput_thenSuccess() {
         final String validFormatName = "KNN990HalfFloatFlatVectorsFormat";
-        Assert.assertEquals(validFormatName, new KNN990HalfFloatFlatVectorsFormat().getName());
-        Assert.assertEquals(validFormatName, new KNN990HalfFloatFlatVectorsFormat(new DefaultFlatVectorScorer()).getName());
+        assertEquals(validFormatName, new KNN990HalfFloatFlatVectorsFormat().getName());
+        assertEquals(validFormatName, new KNN990HalfFloatFlatVectorsFormat(new DefaultFlatVectorScorer()).getName());
     }
 
     @SneakyThrows
