@@ -202,9 +202,8 @@ public class EngineFieldMapper extends KNNVectorFieldMapper {
                 int adjustedDimension = mappedFieldType.vectorDataType == VectorDataType.BINARY
                     ? knnMappingConfig.getDimension() / 8
                     : knnMappingConfig.getDimension();
-                final VectorEncoding encoding = mappedFieldType.vectorDataType == VectorDataType.FLOAT
-                    ? VectorEncoding.FLOAT32
-                    : VectorEncoding.BYTE;
+                final VectorEncoding encoding = (mappedFieldType.vectorDataType == VectorDataType.FLOAT
+                    || mappedFieldType.vectorDataType == VectorDataType.HALF_FLOAT) ? VectorEncoding.FLOAT32 : VectorEncoding.BYTE;
                 final VectorSimilarityFunction similarityFunction = findBestMatchingVectorSimilarityFunction(
                     resolvedKnnMethodContext.getSpaceType()
                 );
@@ -246,10 +245,20 @@ public class EngineFieldMapper extends KNNVectorFieldMapper {
             final List<Field> fields = new ArrayList<>();
             fields.add(new DerivedKnnFloatVectorField(name(), array, fieldType, isDerivedSourceEnabled));
             if (hasDocValues && vectorFieldType != null) {
-                fields.add(new VectorField(name(), array, vectorFieldType));
+                if (vectorDataType == VectorDataType.HALF_FLOAT) {
+                    // FP16 not supported for DocValuesFormat as it is on the deprecation path.
+                    throw new UnsupportedOperationException("HALF_FLOAT vector data type is not supported for DocValuesFormat.");
+                } else {
+                    fields.add(new VectorField(name(), array, vectorFieldType, VectorDataType.FLOAT));
+                }
             }
             if (stored) {
-                fields.add(createStoredFieldForFloatVector(name(), array));
+                if (vectorDataType == VectorDataType.HALF_FLOAT) {
+                    // FP16 not supported for DocValuesFormat as it is on the deprecation path.
+                    throw new UnsupportedOperationException("HALF_FLOAT vector data type is not supported for DocValuesFormat.");
+                } else {
+                    fields.add(createStoredFieldForFloatVector(name(), array));
+                }
             }
             return fields;
         }
