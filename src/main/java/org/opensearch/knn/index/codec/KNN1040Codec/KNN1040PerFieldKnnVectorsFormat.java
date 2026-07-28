@@ -15,6 +15,7 @@ import org.opensearch.common.collect.Tuple;
 import org.opensearch.index.mapper.MapperService;
 import org.opensearch.knn.index.KNNSettings;
 import org.opensearch.knn.index.SpaceType;
+import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.codec.KNN1040BasePerFieldKnnVectorsFormat;
 import org.opensearch.knn.index.codec.KnnVectorsFormatContext;
 import org.opensearch.knn.index.codec.LuceneVectorsFormatType;
@@ -101,7 +102,12 @@ public class KNN1040PerFieldKnnVectorsFormat extends KNN1040BasePerFieldKnnVecto
                 p.getConfidenceInterval(),
                 merge.v2()
             );
-        }, LuceneVectorsFormatType.FLAT, ctx -> new KNN1040ScalarQuantizedVectorsFormat(ScalarEncoding.SINGLE_BIT_QUERY_NIBBLE));
+        }, LuceneVectorsFormatType.FLAT, ctx -> {
+            if (ctx.getVectorDataType() == VectorDataType.HALF_FLOAT) {
+                return new KNN1040HalfFloatFlatVectorsFormat();
+            }
+            return new KNN1040ScalarQuantizedVectorsFormat(ScalarEncoding.SINGLE_BIT_QUERY_NIBBLE);
+        });
     }
 
     @Override

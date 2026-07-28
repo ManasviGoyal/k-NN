@@ -1461,6 +1461,7 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
     public void testMethodFieldMapperParseCreateField_validInput_thenDifferentFieldTypes() {
         try (MockedStatic<KNNVectorFieldMapperUtil> utilMockedStatic = Mockito.mockStatic(KNNVectorFieldMapperUtil.class)) {
             for (VectorDataType dataType : VectorDataType.values()) {
+                if (dataType == VectorDataType.HALF_FLOAT) continue;
                 log.info("Vector Data Type is : {}", dataType);
                 int dimension = adjustDimensionForIndexing(TEST_DIMENSION, dataType);
                 final MethodComponentContext methodComponentContext = new MethodComponentContext(METHOD_HNSW, Collections.emptyMap());
@@ -1563,6 +1564,24 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
     }
 
     @SneakyThrows
+    public void testMethodFieldMapperParseCreateField_whenHalfFloatWithLuceneHNSW_thenValidationFails() {
+        // HALF_FLOAT + HNSW is rejected at method validation time (not createFieldMapper).
+        // This test verifies the validation rejects HALF_FLOAT for HNSW at the engine level.
+        KNNMethodConfigContext knnMethodConfigContext = KNNMethodConfigContext.builder()
+            .vectorDataType(VectorDataType.HALF_FLOAT)
+            .versionCreated(CURRENT)
+            .dimension(TEST_DIMENSION)
+            .build();
+        final MethodComponentContext methodComponentContext = new MethodComponentContext(METHOD_HNSW, Collections.emptyMap());
+        final KNNMethodContext knnMethodContext = new KNNMethodContext(KNNEngine.LUCENE, SpaceType.L2, methodComponentContext);
+
+        assertNotNull(
+            "HALF_FLOAT should not be supported for Lucene HNSW method",
+            KNNEngine.LUCENE.validateMethod(knnMethodContext, knnMethodConfigContext)
+        );
+    }
+
+    @SneakyThrows
     public void testModelFieldMapperParseCreateField_validInput_thenDifferentFieldTypes() {
         ModelDao modelDao = mock(ModelDao.class);
         ModelMetadata modelMetadata = mock(ModelMetadata.class);
@@ -1578,6 +1597,7 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
                 .build();
 
             for (VectorDataType dataType : VectorDataType.values()) {
+                if (dataType == VectorDataType.HALF_FLOAT) continue;
                 log.info("Vector Data Type is : {}", dataType);
                 SpaceType spaceType = VectorDataType.BINARY == dataType ? SpaceType.DEFAULT_BINARY : SpaceType.INNER_PRODUCT;
                 int dimension = adjustDimensionForIndexing(TEST_DIMENSION, dataType);
@@ -2024,6 +2044,38 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
         Mapper.BuilderContext builderContext = new Mapper.BuilderContext(settings, new ContentPath());
         KNNVectorFieldMapper knnVectorFieldMapper = builder.build(builderContext);
         assertTrue(knnVectorFieldMapper instanceof FlatVectorFieldMapper);
+    }
+
+    public void testBuilder_whenHalfFloatWithLegacyKNNDisabled_thenThrows() {
+        // HALF_FLOAT is not supported when index.knn is disabled (DocValues path)
+        ModelDao modelDao = mock(ModelDao.class);
+        KNNVectorFieldMapper.TypeParser typeParser = new KNNVectorFieldMapper.TypeParser(() -> modelDao);
+
+        Settings settings = Settings.builder().put(settings(CURRENT).build()).put(KNN_INDEX, false).build();
+
+        String fieldName = "test-field-name-1";
+        String indexName = "test-index";
+
+        XContentBuilder xContentBuilder;
+        try {
+            xContentBuilder = XContentFactory.jsonBuilder()
+                .startObject()
+                .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+                .field(DIMENSION_FIELD_NAME, 4)
+                .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+                .endObject();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
+        IllegalArgumentException ex = expectThrows(
+            IllegalArgumentException.class,
+            () -> typeParser.parse(fieldName, xContentBuilderToMap(xContentBuilder), buildParserContext(indexName, settings))
+        );
+        assertTrue(
+            "Should reject HALF_FLOAT when index.knn is disabled",
+            ex.getMessage().contains("HALF_FLOAT")
+        );
     }
 
     public void testTypeParser_whenBinaryWithLegacyKNNEnabled_thenValid() throws IOException {

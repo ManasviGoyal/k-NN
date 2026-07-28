@@ -7,6 +7,7 @@ package org.opensearch.knn.index.engine.lucene;
 
 import lombok.extern.log4j.Log4j2;
 import org.apache.lucene.codecs.KnnVectorsFormat;
+import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.codec.KnnVectorsFormatContext;
 import org.opensearch.knn.index.codec.LuceneVectorsFormatType;
 import org.opensearch.knn.index.codec.params.KNNScalarQuantizedVectorsFormatParams;
@@ -53,14 +54,15 @@ public class LuceneCodecFormatResolver implements CodecFormatResolver {
         KNNMethodContext methodContext,
         Map<String, Object> params,
         int defaultMaxConnections,
-        int defaultBeamWidth
+        int defaultBeamWidth,
+        VectorDataType vectorDataType
     ) {
-        LuceneVectorsFormatType formatType = determineFormatType(field, methodContext, params, defaultMaxConnections, defaultBeamWidth);
+        LuceneVectorsFormatType formatType = determineFormatType(field, methodContext, params, defaultMaxConnections, defaultBeamWidth, vectorDataType);
         Function<KnnVectorsFormatContext, KnnVectorsFormat> factory = formatResolvers.get(formatType);
         if (factory == null) {
             throw new IllegalStateException(String.format("No Lucene vectors format registered for type [%s]", formatType));
         }
-        return factory.apply(new KnnVectorsFormatContext(field, methodContext, params, defaultMaxConnections, defaultBeamWidth));
+        return factory.apply(new KnnVectorsFormatContext(field, methodContext, params, defaultMaxConnections, defaultBeamWidth, vectorDataType));
     }
 
     /**
@@ -78,10 +80,11 @@ public class LuceneCodecFormatResolver implements CodecFormatResolver {
         final KNNMethodContext methodContext,
         final Map<String, Object> params,
         final int defaultMaxConnections,
-        final int defaultBeamWidth
+        final int defaultBeamWidth,
+        final VectorDataType vectorDataType
     ) {
         if (METHOD_FLAT.equals(methodContext.getMethodComponentContext().getName())) {
-            log.debug("Initialize KNN vector format for field [{}] with Lucene SQ flat format", field);
+            log.debug("Initialize KNN vector format for field [{}] with flat format (dataType={})", field, vectorDataType);
             return LuceneVectorsFormatType.FLAT;
         }
 

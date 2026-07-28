@@ -305,8 +305,11 @@ public abstract class KNNVectorFieldMapper extends ParametrizedFieldMapper {
             }
 
             // return FlatVectorFieldMapper only for indices that are created on or after 2.17.0, for others, use
-            // EngineFieldMapper to maintain backwards compatibility
-            if (originalParameters.getResolvedKnnMethodContext() == null && indexCreatedVersion.onOrAfter(Version.V_2_17_0)) {
+            // EngineFieldMapper to maintain backwards compatibility.
+            // HALF_FLOAT is excluded because FlatVectorFieldMapper relies on DocValues which HALF_FLOAT does not support.
+            if (originalParameters.getResolvedKnnMethodContext() == null
+                && indexCreatedVersion.onOrAfter(Version.V_2_17_0)
+                && vectorDataType.getValue() != VectorDataType.HALF_FLOAT) {
                 // Prior to 3.0.0, hasDocValues defaulted to false. However, FlatVectorFieldMapper requires
                 // hasDocValues to be true to maintain proper functionality for vector search operations.
                 // For indices created on or after 3.0.0, we automatically set hasDocValues to true if not
@@ -506,6 +509,12 @@ public abstract class KNNVectorFieldMapper extends ParametrizedFieldMapper {
         private void validateFromFlat(KNNVectorFieldMapper.Builder builder) {
             if (builder.modelId.get() != null || builder.knnMethodContext.get() != null) {
                 throw new IllegalArgumentException("Cannot set modelId or method parameters when index.knn setting is false");
+            }
+            if (builder.vectorDataType.getValue() == VectorDataType.HALF_FLOAT) {
+                throw new IllegalArgumentException(
+                    "HALF_FLOAT vector data type is not supported when index.knn is disabled. "
+                        + "Use method 'flat' with engine 'lucene' and index.knn enabled instead."
+                );
             }
             validateDimensionSet(builder);
             validateCompressionAndModeNotSet(builder, builder.name(), "flat");
@@ -785,7 +794,7 @@ public abstract class KNNVectorFieldMapper extends ParametrizedFieldMapper {
             getVectorValidator().validateVector(array);
             getVectorTransformer().transform(array);
             context.doc().addAll(getFieldsForByteVector(array, isDerivedEnabled(context)));
-        } else if (VectorDataType.FLOAT == vectorDataType) {
+        } else if (VectorDataType.FLOAT == vectorDataType || VectorDataType.HALF_FLOAT == vectorDataType) {
             Optional<float[]> floatsArrayOptional = getFloatsFromContext(context, dimension);
 
             if (floatsArrayOptional.isEmpty()) {
