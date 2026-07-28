@@ -48,6 +48,7 @@ import static org.opensearch.knn.common.KNNConstants.VECTOR_DATA_TYPE_FIELD;
 import static org.opensearch.knn.index.mapper.KNNVectorFieldMapperUtil.buildDocValuesFieldType;
 import static org.opensearch.knn.index.mapper.KNNVectorFieldMapperUtil.createStoredFieldForByteVector;
 import static org.opensearch.knn.index.mapper.KNNVectorFieldMapperUtil.createStoredFieldForFloatVector;
+import static org.opensearch.knn.index.mapper.KNNVectorFieldMapperUtil.createStoredFieldForHalfFloatVector;
 
 /**
  *  Field mapper for all supported engines.
@@ -217,6 +218,9 @@ public class EngineFieldMapper extends KNNVectorFieldMapper {
             }
 
             if (useLuceneBasedVectorField) {
+                if (mappedFieldType.vectorDataType == VectorDataType.HALF_FLOAT) {
+                    throw new IllegalArgumentException("Lucene-based vector fields do not yet support HALF_FLOAT vector data type.");
+                }
                 int adjustedDimension = mappedFieldType.vectorDataType == VectorDataType.BINARY
                     ? knnMappingConfig.getDimension() / 8
                     : knnMappingConfig.getDimension();
@@ -264,10 +268,14 @@ public class EngineFieldMapper extends KNNVectorFieldMapper {
             final List<Field> fields = new ArrayList<>();
             fields.add(new DerivedKnnFloatVectorField(name(), array, fieldType, isDerivedSourceEnabled));
             if (hasDocValues && vectorFieldType != null) {
-                fields.add(new VectorField(name(), array, vectorFieldType));
+                fields.add(new VectorField(name(), array, vectorFieldType, vectorDataType));
             }
             if (stored) {
-                fields.add(createStoredFieldForFloatVector(name(), array));
+                if (vectorDataType == VectorDataType.HALF_FLOAT) {
+                    fields.add(createStoredFieldForHalfFloatVector(name(), array));
+                } else {
+                    fields.add(createStoredFieldForFloatVector(name(), array));
+                }
             }
             return fields;
         }

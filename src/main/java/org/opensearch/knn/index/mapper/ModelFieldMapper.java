@@ -265,6 +265,8 @@ public class ModelFieldMapper extends KNNVectorFieldMapper {
                 perDimensionValidator = PerDimensionValidator.DEFAULT_BIT_VALIDATOR;
             } else if (modelMetadata.getVectorDataType() == VectorDataType.BYTE) {
                 perDimensionValidator = PerDimensionValidator.DEFAULT_BYTE_VALIDATOR;
+            } else if (modelMetadata.getVectorDataType() == VectorDataType.HALF_FLOAT) {
+                perDimensionValidator = PerDimensionValidator.DEFAULT_HALF_FLOAT_VALIDATOR;
             } else {
                 perDimensionValidator = PerDimensionValidator.DEFAULT_FLOAT_VALIDATOR;
             }
@@ -304,9 +306,8 @@ public class ModelFieldMapper extends KNNVectorFieldMapper {
             int adjustedDimension = modelMetadata.getVectorDataType() == VectorDataType.BINARY
                 ? modelMetadata.getDimension() / Byte.SIZE
                 : modelMetadata.getDimension();
-            final VectorEncoding encoding = modelMetadata.getVectorDataType() == VectorDataType.FLOAT
-                ? VectorEncoding.FLOAT32
-                : VectorEncoding.BYTE;
+            final VectorEncoding encoding = (modelMetadata.getVectorDataType() == VectorDataType.FLOAT
+                || modelMetadata.getVectorDataType() == VectorDataType.HALF_FLOAT) ? VectorEncoding.FLOAT32 : VectorEncoding.BYTE;
             fieldType.setVectorAttributes(
                 adjustedDimension,
                 encoding,

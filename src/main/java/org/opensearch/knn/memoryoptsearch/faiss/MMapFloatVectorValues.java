@@ -71,6 +71,21 @@ public class MMapFloatVectorValues extends FloatVectorValues implements MMapVect
     }
 
     @Override
+    public DocIndexIterator iterator() {
+        return delegate.iterator();
+    }
+
+    @Override
+    public int ordToDoc(int ord) {
+        return delegate.ordToDoc(ord);
+    }
+
+    @Override
+    public org.apache.lucene.search.VectorScorer scorer(float[] target) throws IOException {
+        return delegate.scorer(target);
+    }
+
+    @Override
     public FloatVectorValues copy() throws IOException {
         return new MMapFloatVectorValues(delegate.copy(), addressAndSize);
     }

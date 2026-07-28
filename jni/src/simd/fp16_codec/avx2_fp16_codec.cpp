@@ -1,0 +1,76 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
+ *
+ * Modifications Copyright OpenSearch Contributors. See
+ * GitHub history for details.
+ */
+
+#include <jni.h>
+#include <immintrin.h>
+#include <cstdint>
+
+#include "jni_util.h"
+#include "simd/fp16_codec/fp16_codec.h"
+
+namespace knn_jni::simd::fp16_codec {
+
+jboolean isSIMDSupported() {
+    return JNI_TRUE;
+}
+
+jboolean encodeFp32ToFp16(knn_jni::JNIUtilInterface *jniUtil, JNIEnv* env,
+                           jfloatArray fp32Array, jbyteArray fp16Array, jint count) {
+    if (count <= 0) return JNI_TRUE;
+
+    jfloat* src_f32 = reinterpret_cast<jfloat*>(jniUtil->GetPrimitiveArrayCritical(env, fp32Array, nullptr));
+    jbyte* dst_bytes = reinterpret_cast<jbyte*>(jniUtil->GetPrimitiveArrayCritical(env, fp16Array, nullptr));
+
+    knn_jni::JNIReleaseElements release_arrays{[=]() {
+        jniUtil->ReleasePrimitiveArrayCritical(env, fp16Array, dst_bytes, 0);
+        jniUtil->ReleasePrimitiveArrayCritical(env, fp32Array, src_f32, JNI_ABORT);
+    }};
+
+    if ((reinterpret_cast<uintptr_t>(dst_bytes) % alignof(uint16_t)) != 0) {
+        return JNI_FALSE;
+    }
+
+    const float* src = reinterpret_cast<const float*>(src_f32);
+    uint16_t* dst = reinterpret_cast<uint16_t*>(dst_bytes);
+
+    size_t i = 0;
+
+    // AVX2 + F16C: process 16 elements per iteration (2x unrolled)
+    for (; i + 16 <= static_cast<size_t>(count); i += 16) {
+        if (i + 64 < static_cast<size_t>(count)) {
+            _mm_prefetch(reinterpret_cast<const char*>(&src[i + 64]), _MM_HINT_T0);
+        }
+        __m256 v0 = _mm256_loadu_ps(&src[i]);
+        __m256 v1 = _mm256_loadu_ps(&src[i + 8]);
+        __m128i h0 = _mm256_cvtps_ph(v0, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+        __m128i h1 = _mm256_cvtps_ph(v1, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(&dst[i]), h0);
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(&dst[i + 8]), h1);
+    }
+
+    // F16C tail: process 8 elements
+    for (; i + 8 <= static_cast<size_t>(count); i += 8) {
+        __m256 v = _mm256_loadu_ps(&src[i]);
+        __m128i h = _mm256_cvtps_ph(v, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(&dst[i]), h);
+    }
+
+    // Scalar fallback for remaining elements
+    for (; i < static_cast<size_t>(count); ++i) {
+        __m128 sv = _mm_set_ss(src[i]);
+        __m128i hv = _mm_cvtps_ph(sv, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+        dst[i] = static_cast<uint16_t>(_mm_cvtsi128_si32(hv));
+    }
+
+    return JNI_TRUE;
+}
+
+}  // namespace knn_jni::simd::fp16_codec
