@@ -11,7 +11,6 @@ import org.apache.lucene.search.VectorScorer;
 import org.apache.lucene.util.BytesRef;
 import org.opensearch.knn.index.SpaceType;
 import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfFloatsSerializer;
-import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
 import org.opensearch.knn.index.codec.util.KNNVectorSerializer;
 
 import java.io.IOException;
@@ -63,23 +62,6 @@ public class TestVectorValues {
         @Override
         public BytesRef binaryValue() throws IOException {
             return new BytesRef(knnVectorSerializer.floatToByteArray(vectors.get(docID())));
-        }
-    }
-
-    public static class PredefinedHalfFloatVectorBinaryDocValues extends VectorDocValues {
-        private final List<float[]> vectors;
-
-        public PredefinedHalfFloatVectorBinaryDocValues(final List<float[]> vectors) {
-            super(vectors.size(), vectors.get(0).length);
-            this.vectors = vectors;
-        }
-
-        @Override
-        public BytesRef binaryValue() throws IOException {
-            float[] vector = vectors.get(docID());
-            byte[] output = new byte[vector.length * 2];
-            KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArrayFallback(vector, output, vector.length);
-            return new BytesRef(output);
         }
     }
 

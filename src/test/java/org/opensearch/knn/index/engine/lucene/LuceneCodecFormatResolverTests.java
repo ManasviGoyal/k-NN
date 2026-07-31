@@ -148,7 +148,14 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
 
         LuceneCodecFormatResolver resolver = new LuceneCodecFormatResolver(resolvers, createMockMapperService());
         Map<String, Object> params = Map.of(METHOD_PARAMETER_M, 32, METHOD_PARAMETER_EF_CONSTRUCTION, 256);
-        KnnVectorsFormat result = resolver.resolve(TEST_FIELD, hnswContext, params, DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, VectorDataType.FLOAT);
+        KnnVectorsFormat result = resolver.resolve(
+            TEST_FIELD,
+            hnswContext,
+            params,
+            DEFAULT_MAX_CONN,
+            DEFAULT_BEAM_WIDTH,
+            VectorDataType.FLOAT
+        );
         assertSame(HNSW_FORMAT, result);
     }
 
@@ -168,7 +175,14 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
         LuceneCodecFormatResolver resolver = new LuceneCodecFormatResolver(resolvers, createMockMapperService());
         IllegalStateException ex = expectThrows(
             IllegalStateException.class,
-            () -> resolver.resolve(TEST_FIELD, flatContext, Collections.emptyMap(), DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, VectorDataType.FLOAT)
+            () -> resolver.resolve(
+                TEST_FIELD,
+                flatContext,
+                Collections.emptyMap(),
+                DEFAULT_MAX_CONN,
+                DEFAULT_BEAM_WIDTH,
+                VectorDataType.FLOAT
+            )
         );
         assertTrue(ex.getMessage().contains("FLAT"));
     }

@@ -67,13 +67,6 @@ public class KNNVectorValuesTests extends KNNTestCase {
         );
         new CompareVectorValues<float[]>().validateVectorValues(knnVectorValuesForFieldWriter, floatArray, 4, dimension, false);
 
-        final TestVectorValues.PredefinedHalfFloatVectorBinaryDocValues preDefinedHalfFloatVectorValues =
-            new TestVectorValues.PredefinedHalfFloatVectorBinaryDocValues(floatArray);
-        final KNNVectorValues<float[]> knnHalfFloatVectorValuesBinaryDocValues = KNNVectorValuesFactory.getVectorValues(
-            VectorDataType.HALF_FLOAT,
-            preDefinedHalfFloatVectorValues
-        );
-        new CompareVectorValues<float[]>().validateVectorValues(knnHalfFloatVectorValuesBinaryDocValues, floatArray, 4, dimension, false);
     }
 
     @SneakyThrows

@@ -23,6 +23,7 @@ if(NOT DEFINED AVX512_SPR_ENABLED)
     if(AVX512_ENABLED AND ${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
         find_program(LSCPU_PROGRAM lscpu)
         if(LSCPU_PROGRAM)
+            execute_process(COMMAND ${LSCPU_PROGRAM} OUTPUT_VARIABLE CPU_INFO)
             if(CPU_INFO MATCHES "GenuineIntel" AND
                CPU_INFO MATCHES "avx512_fp16" AND
                CPU_INFO MATCHES "avx512_bf16" AND
@@ -40,11 +41,13 @@ set(KNN_HAVE_AVX512_SPR OFF)
 set(KNN_HAVE_ARM_FP16 OFF)
 set(SIMD_OPT_LEVEL "")
 set(SIMD_FLAGS "")
+set(SIMD_LIB_EXT "")
 
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Windows" OR (NOT AVX2_ENABLED AND NOT AVX512_ENABLED AND NOT AVX512_SPR_ENABLED))
     message(STATUS "[SIMD] Windows or SIMD explicitly disabled. Falling back to generic.")
     set(SIMD_OPT_LEVEL "generic")  # Keep optimization level as generic on Windows OS as it is not supported due to MINGW64 compiler issue.
     set(SIMD_FLAGS "")
+    set(SIMD_LIB_EXT "")
 
 elseif(${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64" OR ${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm64")
     set(CMAKE_REQUIRED_FLAGS "-march=armv8.4-a+fp16")
@@ -62,6 +65,7 @@ elseif(${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64" OR ${CMAKE_SYSTEM_PROCESSOR} 
         set(KNN_HAVE_ARM_FP16 ON)
         set(SIMD_OPT_LEVEL "generic") # On aarch64 avx2 is not supported.
         set(SIMD_FLAGS -march=armv8.4-a+fp16)
+        set(SIMD_LIB_EXT "")
         add_definitions(-DKNN_HAVE_ARM_FP16)
         message(STATUS "[SIMD] ARM NEON with FP16 supported.")
     else()
@@ -88,7 +92,8 @@ elseif(${CMAKE_SYSTEM_NAME} STREQUAL "Linux" AND AVX512_SPR_ENABLED)
     if(HAVE_AVX512_SPR_COMPILER)
         set(KNN_HAVE_AVX512_SPR ON)
         set(SIMD_OPT_LEVEL "avx512_spr")
-        set(SIMD_FLAGS -mavx512f -mavx512bw -mavx512vl -mavx512fp16)
+        set(SIMD_FLAGS -mavx512f -mavx512bw -mavx512vl -mavx512fp16 -mf16c)
+        set(SIMD_LIB_EXT "_avx512_spr")
         add_definitions(-DKNN_HAVE_AVX512_SPR)
         message(STATUS "[SIMD] AVX512_SPR supported by compiler.")
     else()
@@ -114,6 +119,7 @@ elseif(${CMAKE_SYSTEM_NAME} STREQUAL "Linux" AND AVX512_ENABLED)
         set(KNN_HAVE_AVX512 ON)
         set(SIMD_OPT_LEVEL "avx512") # Keep optimization level as avx512 to improve performance on Linux. This is not present on mac systems, and presently not supported on Windows OS.
         set(SIMD_FLAGS -mavx512f -mavx512vl -mavx512bw -mf16c)
+        set(SIMD_LIB_EXT "_avx512")
         add_definitions(-DKNN_HAVE_AVX512)
         message(STATUS "[SIMD] AVX512 + F16C supported by compiler.")
     else()
@@ -136,6 +142,7 @@ else()
         set(KNN_HAVE_AVX2_F16C ON)
         set(SIMD_OPT_LEVEL "avx2") # Keep optimization level as avx2 to improve performance on Linux and Mac.
         set(SIMD_FLAGS -mavx2 -mf16c -mfma)
+        set(SIMD_LIB_EXT "_avx2")
         add_definitions(-DKNN_HAVE_AVX2_F16C)
         message(STATUS "[SIMD] AVX2 + F16C supported by compiler.")
     else()
@@ -148,6 +155,7 @@ if(SIMD_OPT_LEVEL STREQUAL "")
     message(WARNING "[SIMD] No SIMD support detected or all SIMD options disabled. Falling back to Java encoding/decoding.")
     set(SIMD_OPT_LEVEL "generic")
     set(SIMD_FLAGS "")
+    set(SIMD_LIB_EXT "")
 endif()
 
 # Always-used flags

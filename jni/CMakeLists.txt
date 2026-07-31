@@ -163,7 +163,7 @@ opensearch_set_common_properties(${TARGET_LIB_SIMD})
 
 # Set the output name to embed the SIMD extension (if any)
 set_target_properties(${TARGET_LIB_SIMD} PROPERTIES
-    OUTPUT_NAME "${TARGET_LIB_SIMD}"
+    OUTPUT_NAME "${TARGET_LIB_SIMD}${SIMD_LIB_EXT}"
 )
 
 # Add target SIMD library to TARGET_LIBS list
