@@ -54,8 +54,7 @@ import static org.opensearch.knn.index.codec.KNN1040Codec.KNN1040HalfFloatFlatVe
  */
 public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
 
-    private static final long SHALLOW_RAM_BYTES_USED =
-        RamUsageEstimator.shallowSizeOfInstance(KNN1040HalfFloatFlatVectorsWriter.class);
+    private static final long SHALLOW_RAM_BYTES_USED = RamUsageEstimator.shallowSizeOfInstance(KNN1040HalfFloatFlatVectorsWriter.class);
 
     private static final int DIRECT_MONOTONIC_BLOCK_SHIFT = 16;
 
@@ -65,7 +64,8 @@ public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
     private final List<FieldData> fields = new ArrayList<>();
     private boolean finished;
 
-    private record FieldData(FlatFieldVectorsWriter<?> fieldWriter, FieldInfo fieldInfo) {}
+    private record FieldData(FlatFieldVectorsWriter<?> fieldWriter, FieldInfo fieldInfo) {
+    }
 
     /**
      * Creates a new writer for FP16 flat vectors.
@@ -80,20 +80,14 @@ public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
 
         boolean success = false;
         try {
-            String metaFileName = IndexFileNames.segmentFileName(
-                state.segmentInfo.name, state.segmentSuffix, META_EXTENSION
-            );
-            String vectorDataFileName = IndexFileNames.segmentFileName(
-                state.segmentInfo.name, state.segmentSuffix, VECTOR_DATA_EXTENSION
-            );
+            String metaFileName = IndexFileNames.segmentFileName(state.segmentInfo.name, state.segmentSuffix, META_EXTENSION);
+            String vectorDataFileName = IndexFileNames.segmentFileName(state.segmentInfo.name, state.segmentSuffix, VECTOR_DATA_EXTENSION);
 
             meta = state.directory.createOutput(metaFileName, state.context);
             vectorData = state.directory.createOutput(vectorDataFileName, state.context);
 
             CodecUtil.writeIndexHeader(meta, META_CODEC_NAME, VERSION_CURRENT, state.segmentInfo.getId(), state.segmentSuffix);
-            CodecUtil.writeIndexHeader(
-                vectorData, VECTOR_DATA_CODEC_NAME, VERSION_CURRENT, state.segmentInfo.getId(), state.segmentSuffix
-            );
+            CodecUtil.writeIndexHeader(vectorData, VECTOR_DATA_CODEC_NAME, VERSION_CURRENT, state.segmentInfo.getId(), state.segmentSuffix);
             success = true;
         } finally {
             if (!success) {
@@ -206,12 +200,8 @@ public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
         writeMeta(fieldInfo, vectorDataOffset, vectorDataLength, vectors.size(), docsWithFieldSet);
     }
 
-    private void writeSortingField(
-        FlatFieldVectorsWriter<?> fieldWriter,
-        FieldInfo fieldInfo,
-        int maxDoc,
-        Sorter.DocMap sortMap
-    ) throws IOException {
+    private void writeSortingField(FlatFieldVectorsWriter<?> fieldWriter, FieldInfo fieldInfo, int maxDoc, Sorter.DocMap sortMap)
+        throws IOException {
         int dimension = fieldInfo.getVectorDimension();
         byte[] outputBuffer = new byte[dimension * Short.BYTES];
 
@@ -263,7 +253,12 @@ public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
         meta.writeVInt(fieldInfo.getVectorDimension());
         meta.writeInt(docCount);
         OrdToDocDISIReaderConfiguration.writeStoredMeta(
-            DIRECT_MONOTONIC_BLOCK_SHIFT, meta, vectorData, docCount, segmentWriteState.segmentInfo.maxDoc(), docsWithFieldSet
+            DIRECT_MONOTONIC_BLOCK_SHIFT,
+            meta,
+            vectorData,
+            docCount,
+            segmentWriteState.segmentInfo.maxDoc(),
+            docsWithFieldSet
         );
     }
 
@@ -286,9 +281,7 @@ public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
                 throw new IllegalStateException("already finished");
             }
             if (docID == lastDocID) {
-                throw new IllegalArgumentException(
-                    "VectorValuesField \"" + fieldInfo.name + "\" appears more than once in this document"
-                );
+                throw new IllegalArgumentException("VectorValuesField \"" + fieldInfo.name + "\" appears more than once in this document");
             }
             docsWithField.add(docID);
             vectors.add(copyValue(vectorValue));

@@ -147,14 +147,7 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
             new HashMap<>(),
             null
         );
-        SegmentWriteState writeState = new SegmentWriteState(
-            InfoStream.NO_OUTPUT,
-            dir,
-            segmentInfo,
-            fieldInfos,
-            null,
-            IOContext.DEFAULT
-        );
+        SegmentWriteState writeState = new SegmentWriteState(InfoStream.NO_OUTPUT, dir, segmentInfo, fieldInfos, null, IOContext.DEFAULT);
 
         KNN1040HalfFloatFlatVectorsFormat format = new KNN1040HalfFloatFlatVectorsFormat();
         try (FlatVectorsWriter writer = format.fieldsWriter(writeState)) {
@@ -175,19 +168,34 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
     @SneakyThrows
     public void testWriteWithSortMap_writesReorderedData() {
         try (MMapDirectory dir = new MMapDirectory(createTempDir())) {
-            float[][] vectors = { { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f },
+            float[][] vectors = {
+                { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f },
                 { 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f } };
 
             FieldInfo fieldInfo = createFieldInfo();
             FieldInfos fieldInfos = new FieldInfos(new FieldInfo[] { fieldInfo });
 
             SegmentInfo segmentInfo = new SegmentInfo(
-                dir, Version.LATEST, Version.LATEST, "_0", 2,
-                false, false, null, Collections.emptyMap(),
-                StringHelper.randomId(), new HashMap<>(), null
+                dir,
+                Version.LATEST,
+                Version.LATEST,
+                "_0",
+                2,
+                false,
+                false,
+                null,
+                Collections.emptyMap(),
+                StringHelper.randomId(),
+                new HashMap<>(),
+                null
             );
             SegmentWriteState writeState = new SegmentWriteState(
-                InfoStream.NO_OUTPUT, dir, segmentInfo, fieldInfos, null, IOContext.DEFAULT
+                InfoStream.NO_OUTPUT,
+                dir,
+                segmentInfo,
+                fieldInfos,
+                null,
+                IOContext.DEFAULT
             );
 
             Sorter.DocMap sortMap = new Sorter.DocMap() {
@@ -230,11 +238,24 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
 
     private FieldInfo createFieldInfo() {
         return new FieldInfo(
-            FIELD_NAME, 0, false, false, false,
-            IndexOptions.NONE, DocValuesType.NONE, DocValuesSkipIndexType.NONE,
-            -1, Map.of(), 0, 0, 0, DIMENSION,
-            VectorEncoding.FLOAT32, VectorSimilarityFunction.EUCLIDEAN,
-            false, false
+            FIELD_NAME,
+            0,
+            false,
+            false,
+            false,
+            IndexOptions.NONE,
+            DocValuesType.NONE,
+            DocValuesSkipIndexType.NONE,
+            -1,
+            Map.of(),
+            0,
+            0,
+            0,
+            DIMENSION,
+            VectorEncoding.FLOAT32,
+            VectorSimilarityFunction.EUCLIDEAN,
+            false,
+            false
         );
     }
 

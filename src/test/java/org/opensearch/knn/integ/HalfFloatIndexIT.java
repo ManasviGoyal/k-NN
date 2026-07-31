@@ -166,11 +166,7 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
 
     private void testHalfFloatScriptScore(SpaceType spaceType) throws Exception {
         String mapping = buildHalfFloatMapping(spaceType.getValue());
-        Settings settings = Settings.builder()
-            .put("number_of_shards", 1)
-            .put("number_of_replicas", 0)
-            .put("index.knn", true)
-            .build();
+        Settings settings = Settings.builder().put("number_of_shards", 1).put("number_of_replicas", 0).put("index.knn", true).build();
         createKnnIndex(INDEX_NAME, settings, mapping);
 
         try {
@@ -254,13 +250,7 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
             .fieldName(FIELD_NAME)
             .dimension(DIMENSION)
             .vectorDataType("half_float")
-            .method(
-                KNNJsonIndexMappingsBuilder.Method.builder()
-                    .methodName("hnsw")
-                    .engine("lucene")
-                    .spaceType("l2")
-                    .build()
-            )
+            .method(KNNJsonIndexMappingsBuilder.Method.builder().methodName("hnsw").engine("lucene").spaceType("l2").build())
             .build()
             .getIndexMapping();
 
@@ -274,13 +264,7 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
             .fieldName(FIELD_NAME)
             .dimension(DIMENSION)
             .vectorDataType("half_float")
-            .method(
-                KNNJsonIndexMappingsBuilder.Method.builder()
-                    .methodName("hnsw")
-                    .engine("faiss")
-                    .spaceType("l2")
-                    .build()
-            )
+            .method(KNNJsonIndexMappingsBuilder.Method.builder().methodName("hnsw").engine("faiss").spaceType("l2").build())
             .build()
             .getIndexMapping();
 
@@ -298,11 +282,7 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
             .build()
             .getIndexMapping();
 
-        Settings settings = Settings.builder()
-            .put("number_of_shards", 1)
-            .put("number_of_replicas", 0)
-            .put("index.knn", false)
-            .build();
+        Settings settings = Settings.builder().put("number_of_shards", 1).put("number_of_replicas", 0).put("index.knn", false).build();
 
         ResponseException ex = expectThrows(ResponseException.class, () -> createKnnIndex(INDEX_NAME, settings, mapping));
         assertTrue(
@@ -321,11 +301,7 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
             .build()
             .getIndexMapping();
 
-        Settings settings = Settings.builder()
-            .put("number_of_shards", 1)
-            .put("number_of_replicas", 0)
-            .put("index.knn", true)
-            .build();
+        Settings settings = Settings.builder().put("number_of_shards", 1).put("number_of_replicas", 0).put("index.knn", true).build();
 
         ResponseException ex = expectThrows(ResponseException.class, () -> createKnnIndex(INDEX_NAME, settings, mapping));
         assertTrue(
@@ -343,13 +319,7 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
             .fieldName(FIELD_NAME)
             .dimension(DIMENSION)
             .vectorDataType("half_float")
-            .method(
-                KNNJsonIndexMappingsBuilder.Method.builder()
-                    .methodName("flat")
-                    .engine("lucene")
-                    .spaceType(spaceType)
-                    .build()
-            )
+            .method(KNNJsonIndexMappingsBuilder.Method.builder().methodName("flat").engine("lucene").spaceType(spaceType).build())
             .build()
             .getIndexMapping();
     }

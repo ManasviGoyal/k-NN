@@ -83,7 +83,6 @@ public class VectorDataTypeTests extends KNNTestCase {
         );
     }
 
-
     private void createKNNFloatVectorDocument(Directory directory) throws IOException {
         IndexWriterConfig conf = newIndexWriterConfig(new MockAnalyzer(random()));
         IndexWriter writer = new IndexWriter(directory, conf);
@@ -105,7 +104,6 @@ public class VectorDataTypeTests extends KNNTestCase {
         writer.close();
     }
 
-
     public void testGetVectorFromBytesRef_whenBinary_thenException() {
         byte[] vector = { 1, 2, 3 };
         BytesRef bytesRef = new BytesRef(vector);
@@ -120,7 +118,6 @@ public class VectorDataTypeTests extends KNNTestCase {
         float[] result = VectorDataType.HALF_FLOAT.getVectorFromBytesRef(bytesRef);
         assertArrayEquals(input, result, 0.1f);
     }
-
 
     public void testGet_whenHalfFloat_thenReturnsHalfFloatEnum() {
         assertEquals(VectorDataType.HALF_FLOAT, VectorDataType.get("half_float"));

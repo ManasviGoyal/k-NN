@@ -84,13 +84,15 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
             int versionMeta = readMetadata(state);
 
             // Open vector data file
-            String vectorDataFileName = IndexFileNames.segmentFileName(
-                state.segmentInfo.name, state.segmentSuffix, VECTOR_DATA_EXTENSION
-            );
+            String vectorDataFileName = IndexFileNames.segmentFileName(state.segmentInfo.name, state.segmentSuffix, VECTOR_DATA_EXTENSION);
             vectorData = state.directory.openInput(vectorDataFileName, dataContext);
             int versionData = CodecUtil.checkIndexHeader(
-                vectorData, VECTOR_DATA_CODEC_NAME, VERSION_START, VERSION_CURRENT,
-                state.segmentInfo.getId(), state.segmentSuffix
+                vectorData,
+                VECTOR_DATA_CODEC_NAME,
+                VERSION_START,
+                VERSION_CURRENT,
+                state.segmentInfo.getId(),
+                state.segmentSuffix
             );
             if (versionMeta != versionData) {
                 throw new IOException("Version mismatch: meta=" + versionMeta + " data=" + versionData);
@@ -105,16 +107,18 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
     }
 
     private int readMetadata(SegmentReadState state) throws IOException {
-        String metaFileName = IndexFileNames.segmentFileName(
-            state.segmentInfo.name, state.segmentSuffix, META_EXTENSION
-        );
+        String metaFileName = IndexFileNames.segmentFileName(state.segmentInfo.name, state.segmentSuffix, META_EXTENSION);
         int versionMeta;
         try (ChecksumIndexInput meta = state.directory.openChecksumInput(metaFileName)) {
             Throwable priorE = null;
             try {
                 versionMeta = CodecUtil.checkIndexHeader(
-                    meta, META_CODEC_NAME, VERSION_START, VERSION_CURRENT,
-                    state.segmentInfo.getId(), state.segmentSuffix
+                    meta,
+                    META_CODEC_NAME,
+                    VERSION_START,
+                    VERSION_CURRENT,
+                    state.segmentInfo.getId(),
+                    state.segmentSuffix
                 );
                 readFields(meta);
             } catch (Throwable t) {
@@ -261,23 +265,22 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
 
     // ─── Field metadata ─────────────────────────────────────────────────────────
 
-    private record FieldEntry(
-        VectorSimilarityFunction similarity,
-        long vectorDataOffset,
-        long vectorDataLength,
-        int dimension,
-        int size,
-        OrdToDocDISIReaderConfiguration ordToDoc
-    ) {
+    private record FieldEntry(VectorSimilarityFunction similarity, long vectorDataOffset, long vectorDataLength, int dimension, int size,
+        OrdToDocDISIReaderConfiguration ordToDoc) {
         FieldEntry {
             long expectedBytes = (long) size * dimension * Short.BYTES;
             if (expectedBytes != vectorDataLength) {
                 throw new IllegalStateException(
-                    "Vector data length " + vectorDataLength
-                        + " not matching size=" + size
-                        + " * dim=" + dimension
-                        + " * byteSize=" + Short.BYTES
-                        + " = " + expectedBytes
+                    "Vector data length "
+                        + vectorDataLength
+                        + " not matching size="
+                        + size
+                        + " * dim="
+                        + dimension
+                        + " * byteSize="
+                        + Short.BYTES
+                        + " = "
+                        + expectedBytes
                 );
             }
         }
@@ -374,7 +377,14 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
         @Override
         public VectorScorer scorer(float[] target) throws IOException {
             if (size() == 0) return null;
-            HalfFloatVectorValues copy = new HalfFloatVectorValues(dimension, size, slice.clone(), ordToDocReader, flatVectorsScorer, similarity);
+            HalfFloatVectorValues copy = new HalfFloatVectorValues(
+                dimension,
+                size,
+                slice.clone(),
+                ordToDocReader,
+                flatVectorsScorer,
+                similarity
+            );
             DocIndexIterator iterator = copy.iterator();
             return new VectorScorer() {
                 @Override
