@@ -267,8 +267,8 @@ public class EngineFieldMapper extends KNNVectorFieldMapper {
         if (this.isLuceneEngine) {
             final List<Field> fields = new ArrayList<>();
             fields.add(new DerivedKnnFloatVectorField(name(), array, fieldType, isDerivedSourceEnabled));
-            if (hasDocValues && vectorFieldType != null) {
-                fields.add(new VectorField(name(), array, vectorFieldType, vectorDataType));
+            if (hasDocValues && vectorFieldType != null && vectorDataType != VectorDataType.HALF_FLOAT) {
+                fields.add(new VectorField(name(), array, vectorFieldType));
             }
             if (stored) {
                 if (vectorDataType == VectorDataType.HALF_FLOAT) {

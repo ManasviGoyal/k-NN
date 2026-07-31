@@ -57,12 +57,21 @@ public class LuceneCodecFormatResolver implements CodecFormatResolver {
         int defaultBeamWidth,
         VectorDataType vectorDataType
     ) {
-        LuceneVectorsFormatType formatType = determineFormatType(field, methodContext, params, defaultMaxConnections, defaultBeamWidth, vectorDataType);
+        LuceneVectorsFormatType formatType = determineFormatType(
+            field,
+            methodContext,
+            params,
+            defaultMaxConnections,
+            defaultBeamWidth,
+            vectorDataType
+        );
         Function<KnnVectorsFormatContext, KnnVectorsFormat> factory = formatResolvers.get(formatType);
         if (factory == null) {
             throw new IllegalStateException(String.format("No Lucene vectors format registered for type [%s]", formatType));
         }
-        return factory.apply(new KnnVectorsFormatContext(field, methodContext, params, defaultMaxConnections, defaultBeamWidth, vectorDataType));
+        return factory.apply(
+            new KnnVectorsFormatContext(field, methodContext, params, defaultMaxConnections, defaultBeamWidth, vectorDataType)
+        );
     }
 
     /**

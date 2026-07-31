@@ -21,7 +21,6 @@ import org.junit.Assert;
 import org.opensearch.knn.KNNTestCase;
 import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfFloatsSerializer;
 import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
-import org.opensearch.knn.index.KNNVectorSimilarityFunction;
 
 import java.io.IOException;
 
@@ -29,7 +28,6 @@ public class VectorDataTypeTests extends KNNTestCase {
 
     private static final String MOCK_FLOAT_INDEX_FIELD_NAME = "test-float-index-field-name";
     private static final String MOCK_BYTE_INDEX_FIELD_NAME = "test-byte-index-field-name";
-    private static final String MOCK_HALF_FLOAT_INDEX_FIELD_NAME = "test-half-float-index-field-name";
     private static final float[] SAMPLE_FLOAT_VECTOR_DATA = new float[] { 10.0f, 25.0f };
     private static final byte[] SAMPLE_BYTE_VECTOR_DATA = new byte[] { 10, 25 };
     private Directory directory;
@@ -85,19 +83,6 @@ public class VectorDataTypeTests extends KNNTestCase {
         );
     }
 
-    @SuppressWarnings("unchecked")
-    @SneakyThrows
-    private KNNVectorScriptDocValues<float[]> getKNNHalfFloatVectorScriptDocValues() {
-        directory = newDirectory();
-        createKNNHalfFloatVectorDocument(directory);
-        reader = DirectoryReader.open(directory);
-        LeafReaderContext leafReaderContext = reader.getContext().leaves().get(0);
-        return (KNNVectorScriptDocValues<float[]>) KNNVectorScriptDocValues.create(
-            leafReaderContext.reader().getBinaryDocValues(VectorDataTypeTests.MOCK_HALF_FLOAT_INDEX_FIELD_NAME),
-            VectorDataTypeTests.MOCK_HALF_FLOAT_INDEX_FIELD_NAME,
-            VectorDataType.HALF_FLOAT
-        );
-    }
 
     private void createKNNFloatVectorDocument(Directory directory) throws IOException {
         IndexWriterConfig conf = newIndexWriterConfig(new MockAnalyzer(random()));
@@ -120,17 +105,6 @@ public class VectorDataTypeTests extends KNNTestCase {
         writer.close();
     }
 
-    private void createKNNHalfFloatVectorDocument(Directory directory) throws IOException {
-        IndexWriterConfig conf = newIndexWriterConfig(new MockAnalyzer(random()));
-        IndexWriter writer = new IndexWriter(directory, conf);
-        Document knnDocument = new Document();
-        byte[] encoded = new byte[SAMPLE_FLOAT_VECTOR_DATA.length * 2];
-        KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArrayFallback(SAMPLE_FLOAT_VECTOR_DATA, encoded, SAMPLE_FLOAT_VECTOR_DATA.length);
-        knnDocument.add(new BinaryDocValuesField(MOCK_HALF_FLOAT_INDEX_FIELD_NAME, new BytesRef(encoded)));
-        writer.addDocument(knnDocument);
-        writer.commit();
-        writer.close();
-    }
 
     public void testGetVectorFromBytesRef_whenBinary_thenException() {
         byte[] vector = { 1, 2, 3 };
@@ -140,33 +114,20 @@ public class VectorDataTypeTests extends KNNTestCase {
 
     public void testGetVectorFromBytesRef_whenHalfFloat_thenSuccess() {
         float[] input = new float[] { 10.0f, 25.0f };
-        byte[] encoded = new byte[input.length * 2];
-        KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArrayFallback(input, encoded, input.length);
+        byte[] encoded = new byte[input.length * Short.BYTES];
+        KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArrayJava(input, encoded, input.length);
         BytesRef bytesRef = new BytesRef(encoded);
         float[] result = VectorDataType.HALF_FLOAT.getVectorFromBytesRef(bytesRef);
-        Assert.assertArrayEquals(input, result, 0.1f);
+        assertArrayEquals(input, result, 0.1f);
     }
 
-    @SneakyThrows
-    public void testGetDocValuesWithHalfFloatVectorDataType() {
-        KNNVectorScriptDocValues<float[]> scriptDocValues = getKNNHalfFloatVectorScriptDocValues();
-
-        scriptDocValues.setNextDocId(0);
-        Assert.assertArrayEquals(SAMPLE_FLOAT_VECTOR_DATA, scriptDocValues.getValue(), 0.1f);
-
-        reader.close();
-        directory.close();
-    }
 
     public void testGet_whenHalfFloat_thenReturnsHalfFloatEnum() {
         assertEquals(VectorDataType.HALF_FLOAT, VectorDataType.get("half_float"));
     }
 
     public void testCreateKnnVectorFieldType_whenHalfFloat_thenReturnsFloatFieldType() {
-        FieldType fieldType = VectorDataType.HALF_FLOAT.createKnnVectorFieldType(
-            3,
-            KNNVectorSimilarityFunction.EUCLIDEAN
-        );
+        FieldType fieldType = VectorDataType.HALF_FLOAT.createKnnVectorFieldType(3, KNNVectorSimilarityFunction.EUCLIDEAN);
         assertNotNull(fieldType);
         assertEquals(3, fieldType.vectorDimension());
         assertEquals(VectorEncoding.FLOAT32, fieldType.vectorEncoding());

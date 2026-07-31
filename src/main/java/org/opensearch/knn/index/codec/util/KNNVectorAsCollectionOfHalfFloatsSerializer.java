@@ -5,6 +5,7 @@
 
 package org.opensearch.knn.index.codec.util;
 
+import org.apache.lucene.util.BytesRef;
 import org.opensearch.knn.jni.SimdFp16;
 
 /**
@@ -41,7 +42,7 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer {
             return;
         }
 
-        floatToByteArrayFallback(input, output, dimension);
+        floatToByteArrayJava(input, output, dimension);
     }
 
     /**
@@ -53,6 +54,13 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer {
      * @param dimension number of floats to deserialize
      * @param offset    byte offset into the input array where decoding should start
      */
+    public float[] byteToFloatArray(BytesRef bytesRef) {
+        int dimension = bytesRef.length / BYTES_IN_HALF_FLOAT;
+        float[] output = new float[dimension];
+        byteToFloatArrayJava(bytesRef.bytes, output, dimension, bytesRef.offset);
+        return output;
+    }
+
     public void byteToFloatArray(byte[] input, float[] output, int dimension, int offset) {
         if (input == null || output == null) {
             throw new IllegalArgumentException("Input/output buffers cannot be null.");
@@ -64,7 +72,7 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer {
         byteToFloatArrayJava(input, output, dimension, offset);
     }
 
-    public void floatToByteArrayFallback(float[] input, byte[] output, int dimension) {
+    public void floatToByteArrayJava(float[] input, byte[] output, int dimension) {
         for (int i = 0; i < dimension; ++i) {
             short fp16 = Float.floatToFloat16(input[i]);
             output[2 * i] = (byte) (fp16 & 0xFF);

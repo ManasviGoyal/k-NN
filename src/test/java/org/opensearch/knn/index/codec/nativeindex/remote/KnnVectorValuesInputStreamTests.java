@@ -11,7 +11,6 @@ import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.vectorvalues.KNNVectorValues;
 import org.opensearch.knn.index.vectorvalues.KNNVectorValuesFactory;
 import org.opensearch.knn.index.vectorvalues.TestVectorValues;
-import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -262,41 +261,6 @@ public class KnnVectorValuesInputStreamTests extends KNNTestCase {
         assertEquals(blobLength, docStreamForRead.read(bufferRead.array(), 0, blobLength));
 
         assertArrayEquals(bufferRead.array(), bufferReadByByte.array());
-    }
-
-    public void testHalfFloatVectorValuesInputStream() throws IOException {
-        int NUM_DOCS = randomIntBetween(1, 1000);
-        int NUM_DIMENSION = randomIntBetween(1, 1000);
-
-        List<float[]> vectorValues = getRandomFloatVectors(NUM_DOCS, NUM_DIMENSION);
-        final TestVectorValues.PreDefinedFloatVectorValues randomVectorValues = new TestVectorValues.PreDefinedFloatVectorValues(
-            vectorValues
-        );
-        final KNNVectorValues<float[]> knnVectorValuesForStream = KNNVectorValuesFactory.getVectorValues(
-            VectorDataType.HALF_FLOAT,
-            randomVectorValues
-        );
-        final KNNVectorValues<float[]> knnVectorValues = KNNVectorValuesFactory.getVectorValues(
-            VectorDataType.HALF_FLOAT,
-            randomVectorValues
-        );
-
-        InputStream vectorValuesInputStream = new VectorValuesInputStream(knnVectorValuesForStream, VectorDataType.HALF_FLOAT);
-
-        byte[] vectorStreamBytes = vectorValuesInputStream.readAllBytes();
-
-        initializeVectorValues(knnVectorValues);
-        ByteBuffer expectedBuffer = ByteBuffer.allocate(NUM_DOCS * knnVectorValues.bytesPerVector()).order(ByteOrder.LITTLE_ENDIAN);
-        int docId = knnVectorValues.docId();
-        while (docId != -1 && docId != DocIdSetIterator.NO_MORE_DOCS) {
-            float[] vector = knnVectorValues.getVector();
-            byte[] encoded = new byte[vector.length * 2];
-            KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArrayFallback(vector, encoded, vector.length);
-            expectedBuffer.put(encoded);
-            docId = knnVectorValues.nextDoc();
-        }
-
-        assertArrayEquals(expectedBuffer.array(), vectorStreamBytes);
     }
 
     private List<float[]> getRandomFloatVectors(int numDocs, int dimension) {

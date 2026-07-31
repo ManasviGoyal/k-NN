@@ -87,7 +87,7 @@ public class KNNVectorFieldMapperUtil {
      */
     public static StoredField createStoredFieldForHalfFloatVector(String name, float[] vector) {
         byte[] output = new byte[vector.length * 2];
-        KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArrayFallback(vector, output, vector.length);
+        KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArrayJava(vector, output, vector.length);
         return new StoredField(name, output);
     }
 
@@ -103,7 +103,6 @@ public class KNNVectorFieldMapperUtil {
             Arrays.setAll(byteAsIntArray, i -> bytes[i + storedVector.offset]);
             return byteAsIntArray;
         }
-
 
         return vectorDataType.getVectorFromBytesRef(storedVector);
     }

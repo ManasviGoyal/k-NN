@@ -2072,10 +2072,7 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
             IllegalArgumentException.class,
             () -> typeParser.parse(fieldName, xContentBuilderToMap(xContentBuilder), buildParserContext(indexName, settings))
         );
-        assertTrue(
-            "Should reject HALF_FLOAT when index.knn is disabled",
-            ex.getMessage().contains("HALF_FLOAT")
-        );
+        assertTrue("Should reject HALF_FLOAT when index.knn is disabled", ex.getMessage().contains("HALF_FLOAT"));
     }
 
     public void testTypeParser_whenBinaryWithLegacyKNNEnabled_thenValid() throws IOException {

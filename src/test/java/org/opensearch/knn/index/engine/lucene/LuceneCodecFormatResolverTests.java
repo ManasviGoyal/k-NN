@@ -59,7 +59,14 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
         );
 
         LuceneCodecFormatResolver resolver = new LuceneCodecFormatResolver(resolvers);
-        KnnVectorsFormat result = resolver.resolve(TEST_FIELD, flatContext, Collections.emptyMap(), DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, VectorDataType.FLOAT);
+        KnnVectorsFormat result = resolver.resolve(
+            TEST_FIELD,
+            flatContext,
+            Collections.emptyMap(),
+            DEFAULT_MAX_CONN,
+            DEFAULT_BEAM_WIDTH,
+            VectorDataType.FLOAT
+        );
         assertSame(FLAT_FORMAT, result);
     }
 
@@ -78,7 +85,14 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
         );
 
         LuceneCodecFormatResolver resolver = new LuceneCodecFormatResolver(resolvers);
-        KnnVectorsFormat result = resolver.resolve(TEST_FIELD, flatContext, Collections.emptyMap(), DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, VectorDataType.HALF_FLOAT);
+        KnnVectorsFormat result = resolver.resolve(
+            TEST_FIELD,
+            flatContext,
+            Collections.emptyMap(),
+            DEFAULT_MAX_CONN,
+            DEFAULT_BEAM_WIDTH,
+            VectorDataType.HALF_FLOAT
+        );
         assertSame(FLAT_FORMAT, result);
     }
 
@@ -101,7 +115,14 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
         );
 
         LuceneCodecFormatResolver resolver = new LuceneCodecFormatResolver(resolvers);
-        KnnVectorsFormat result = resolver.resolve(TEST_FIELD, sqContext, params, DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, VectorDataType.FLOAT);
+        KnnVectorsFormat result = resolver.resolve(
+            TEST_FIELD,
+            sqContext,
+            params,
+            DEFAULT_MAX_CONN,
+            DEFAULT_BEAM_WIDTH,
+            VectorDataType.FLOAT
+        );
         assertSame(SQ_FORMAT, result);
     }
 
@@ -119,7 +140,14 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
 
         LuceneCodecFormatResolver resolver = new LuceneCodecFormatResolver(resolvers);
         Map<String, Object> params = Map.of(METHOD_PARAMETER_M, 32, METHOD_PARAMETER_EF_CONSTRUCTION, 256);
-        KnnVectorsFormat result = resolver.resolve(TEST_FIELD, hnswContext, params, DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, VectorDataType.FLOAT);
+        KnnVectorsFormat result = resolver.resolve(
+            TEST_FIELD,
+            hnswContext,
+            params,
+            DEFAULT_MAX_CONN,
+            DEFAULT_BEAM_WIDTH,
+            VectorDataType.FLOAT
+        );
         assertSame(HNSW_FORMAT, result);
     }
 
@@ -139,7 +167,14 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
         LuceneCodecFormatResolver resolver = new LuceneCodecFormatResolver(resolvers);
         IllegalStateException ex = expectThrows(
             IllegalStateException.class,
-            () -> resolver.resolve(TEST_FIELD, flatContext, Collections.emptyMap(), DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, VectorDataType.FLOAT)
+            () -> resolver.resolve(
+                TEST_FIELD,
+                flatContext,
+                Collections.emptyMap(),
+                DEFAULT_MAX_CONN,
+                DEFAULT_BEAM_WIDTH,
+                VectorDataType.FLOAT
+            )
         );
         assertTrue(ex.getMessage().contains("FLAT"));
     }
@@ -190,7 +225,14 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
         );
 
         LuceneCodecFormatResolver resolver = new LuceneCodecFormatResolver(resolvers);
-        KnnVectorsFormat result = resolver.resolve(TEST_FIELD, hnswContext, null, DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, VectorDataType.FLOAT);
+        KnnVectorsFormat result = resolver.resolve(
+            TEST_FIELD,
+            hnswContext,
+            null,
+            DEFAULT_MAX_CONN,
+            DEFAULT_BEAM_WIDTH,
+            VectorDataType.FLOAT
+        );
         assertSame(HNSW_FORMAT, result);
     }
 
@@ -219,7 +261,14 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
         );
 
         LuceneCodecFormatResolver resolver = new LuceneCodecFormatResolver(resolvers);
-        KnnVectorsFormat result = resolver.resolve(TEST_FIELD, sqContext, params, DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, VectorDataType.FLOAT);
+        KnnVectorsFormat result = resolver.resolve(
+            TEST_FIELD,
+            sqContext,
+            params,
+            DEFAULT_MAX_CONN,
+            DEFAULT_BEAM_WIDTH,
+            VectorDataType.FLOAT
+        );
         assertSame("SQ with bits=1 should route to SCALAR_QUANTIZED resolver", SQ_FORMAT, result);
     }
 

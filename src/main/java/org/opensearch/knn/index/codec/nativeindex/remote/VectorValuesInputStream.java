@@ -11,8 +11,6 @@ import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.vectorvalues.KNNBinaryVectorValues;
 import org.opensearch.knn.index.vectorvalues.KNNByteVectorValues;
 import org.opensearch.knn.index.vectorvalues.KNNFloatVectorValues;
-import org.opensearch.knn.index.vectorvalues.KNNHalfFloatVectorValues;
-import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
 import org.opensearch.knn.index.vectorvalues.KNNVectorValues;
 import org.opensearch.knn.index.vectorvalues.QuantizedKNNBinaryVectorValues;
 
@@ -22,6 +20,9 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.opensearch.knn.index.VectorDataType.BINARY;
+import static org.opensearch.knn.index.VectorDataType.BYTE;
+import static org.opensearch.knn.index.VectorDataType.FLOAT;
 import static org.opensearch.knn.index.codec.util.KNNCodecUtil.initializeVectorValues;
 
 /**
@@ -198,18 +199,13 @@ class VectorValuesInputStream extends InputStream {
      */
     private void reloadBuffer() throws IOException {
         currentBuffer.clear();
-        if (vectorDataType == VectorDataType.FLOAT) {
+        if (vectorDataType == FLOAT) {
             float[] floatVector = ((KNNFloatVectorValues) knnVectorValues).getVector();
             currentBuffer.asFloatBuffer().put(floatVector);
-        } else if (vectorDataType == VectorDataType.HALF_FLOAT) {
-            float[] floatVector = ((KNNHalfFloatVectorValues) knnVectorValues).getVector();
-            byte[] encoded = new byte[floatVector.length * 2];
-            KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArrayFallback(floatVector, encoded, floatVector.length);
-            currentBuffer.put(encoded);
-        } else if (vectorDataType == VectorDataType.BYTE) {
+        } else if (vectorDataType == BYTE) {
             byte[] byteVector = ((KNNByteVectorValues) knnVectorValues).getVector();
             currentBuffer.put(byteVector);
-        } else if (vectorDataType == VectorDataType.BINARY) {
+        } else if (vectorDataType == BINARY) {
             final byte[] binaryVector;
             if (knnVectorValues instanceof QuantizedKNNBinaryVectorValues quantizedKNNBinaryVectorValues) {
                 // Original vector is non-binary, and we applied quantization on them to binary vectors.
