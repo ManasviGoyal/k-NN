@@ -21,6 +21,7 @@ import org.apache.lucene.search.AcceptDocs;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.KnnCollector;
 import org.apache.lucene.search.VectorScorer;
+import org.apache.lucene.codecs.lucene95.HasIndexSlice;
 import org.apache.lucene.store.ChecksumIndexInput;
 import org.apache.lucene.store.DataAccessHint;
 import org.apache.lucene.store.IOContext;
@@ -293,7 +294,7 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
      * the SIMD scorer reads FP16 directly from native memory instead of calling vectorValue().
      * When not wrapped (no mmap), the delegate scorer calls vectorValue() for Java-side scoring.
      */
-    private static class HalfFloatVectorValues extends FloatVectorValues {
+    private static class HalfFloatVectorValues extends FloatVectorValues implements HasIndexSlice {
         private final int dimension;
         private final int size;
         private final IndexInput slice;
@@ -322,7 +323,8 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
             this.similarity = similarity;
         }
 
-        IndexInput getSlice() {
+        @Override
+        public IndexInput getSlice() {
             return slice;
         }
 

@@ -9,6 +9,7 @@ import lombok.SneakyThrows;
 import org.apache.lucene.codecs.hnsw.FlatFieldVectorsWriter;
 import org.apache.lucene.codecs.hnsw.FlatVectorsReader;
 import org.apache.lucene.codecs.hnsw.FlatVectorsWriter;
+import org.apache.lucene.codecs.lucene95.HasIndexSlice;
 import org.apache.lucene.index.DocValuesSkipIndexType;
 import org.apache.lucene.index.DocValuesType;
 import org.apache.lucene.index.FieldInfo;
@@ -257,6 +258,28 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
             false,
             false
         );
+    }
+
+    @SneakyThrows
+    public void testFloatVectorValues_implementsHasIndexSlice() {
+        try (MMapDirectory dir = new MMapDirectory(createTempDir())) {
+            float[][] vectors = generateVectors(NUM_VECTORS, DIMENSION);
+            SegmentReadState readState = writeVectors(dir, vectors);
+
+            try (FlatVectorsReader reader = new KNN1040HalfFloatFlatVectorsFormat().fieldsReader(readState)) {
+                FloatVectorValues values = reader.getFloatVectorValues(FIELD_NAME);
+                assertNotNull(values);
+
+                // MMapFloatVectorValues wraps HalfFloatVectorValues which implements HasIndexSlice
+                // This enables prefetch in PrefetchableFlatVectorScorer
+                assertTrue(
+                    "FloatVectorValues should implement HasIndexSlice for prefetch support",
+                    values instanceof HasIndexSlice
+                );
+                HasIndexSlice hasSlice = (HasIndexSlice) values;
+                assertNotNull("getSlice() should return non-null IndexInput for mmap-backed values", hasSlice.getSlice());
+            }
+        }
     }
 
     private float[][] generateVectors(int count, int dimension) {
