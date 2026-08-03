@@ -1582,6 +1582,74 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
     }
 
     @SneakyThrows
+    public void testMethodFieldMapperParseCreateField_whenHalfFloatWithLuceneFlat_thenCreatesLuceneVectorField() {
+        try (MockedStatic<KNNVectorFieldMapperUtil> utilMockedStatic = Mockito.mockStatic(KNNVectorFieldMapperUtil.class)) {
+            utilMockedStatic.when(() -> KNNVectorFieldMapperUtil.useLuceneKNNVectorsFormat(Mockito.any())).thenReturn(true);
+            utilMockedStatic.when(() -> KNNVectorFieldMapperUtil.useFullFieldNameValidation(Mockito.any())).thenReturn(true);
+
+            KNNMethodConfigContext knnMethodConfigContext = KNNMethodConfigContext.builder()
+                .vectorDataType(VectorDataType.HALF_FLOAT)
+                .versionCreated(CURRENT)
+                .dimension(TEST_DIMENSION)
+                .build();
+            final MethodComponentContext methodComponentContext = new MethodComponentContext(
+                KNNConstants.METHOD_FLAT,
+                Collections.emptyMap()
+            );
+            final KNNMethodContext knnMethodContext = new KNNMethodContext(KNNEngine.LUCENE, SpaceType.L2, methodComponentContext);
+
+            OriginalMappingParameters originalMappingParameters = new OriginalMappingParameters(
+                VectorDataType.HALF_FLOAT,
+                TEST_DIMENSION,
+                knnMethodContext,
+                Mode.NOT_CONFIGURED.getName(),
+                CompressionLevel.NOT_CONFIGURED.getName(),
+                null,
+                SpaceType.UNDEFINED.getValue(),
+                KNNEngine.UNDEFINED.getName()
+            );
+            originalMappingParameters.setResolvedKnnMethodContext(knnMethodContext);
+
+            EngineFieldMapper fieldMapper = EngineFieldMapper.createFieldMapper(
+                TEST_FIELD_NAME,
+                TEST_FIELD_NAME,
+                Collections.emptyMap(),
+                knnMethodConfigContext,
+                FieldMapper.MultiFields.empty(),
+                FieldMapper.CopyTo.empty(),
+                new Explicit<>(true, true),
+                false,
+                false,
+                originalMappingParameters,
+                CURRENT
+            );
+
+            IndexSettings indexSettingsMock = mock(IndexSettings.class);
+            when(indexSettingsMock.getSettings()).thenReturn(Settings.EMPTY);
+            ParseContext.Document document = new ParseContext.Document();
+            ContentPath contentPath = new ContentPath();
+            ParseContext parseContext = mock(ParseContext.class);
+            when(parseContext.doc()).thenReturn(document);
+            when(parseContext.path()).thenReturn(contentPath);
+            when(parseContext.parser()).thenReturn(createXContentParser(VectorDataType.FLOAT));
+            when(parseContext.indexSettings()).thenReturn(indexSettingsMock);
+
+            fieldMapper.parseCreateField(parseContext, TEST_DIMENSION, VectorDataType.HALF_FLOAT);
+
+            List<IndexableField> fields = document.getFields();
+            assertEquals(1, fields.size());
+            IndexableField field = fields.get(0);
+            assertTrue("FP16 flat should create a KnnFloatVectorField", field instanceof KnnFloatVectorField);
+            assertEquals(VectorEncoding.FLOAT32, field.fieldType().vectorEncoding());
+            assertEquals(TEST_DIMENSION, field.fieldType().vectorDimension());
+            assertEquals(
+                VectorSimilarityFunction.EUCLIDEAN,
+                field.fieldType().vectorSimilarityFunction()
+            );
+        }
+    }
+
+    @SneakyThrows
     public void testModelFieldMapperParseCreateField_validInput_thenDifferentFieldTypes() {
         ModelDao modelDao = mock(ModelDao.class);
         ModelMetadata modelMetadata = mock(ModelMetadata.class);
