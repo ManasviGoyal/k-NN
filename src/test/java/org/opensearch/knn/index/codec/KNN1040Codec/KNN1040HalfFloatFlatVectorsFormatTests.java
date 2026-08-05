@@ -21,6 +21,11 @@ import org.apache.lucene.index.SegmentReadState;
 import org.apache.lucene.index.SegmentWriteState;
 import org.apache.lucene.index.VectorEncoding;
 import org.apache.lucene.index.VectorSimilarityFunction;
+import org.apache.lucene.search.DocAndFloatFeatureBuffer;
+import org.apache.lucene.search.DocIdSetIterator;
+import org.apache.lucene.search.VectorScorer;
+import org.apache.lucene.store.ByteBuffersDirectory;
+import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.MMapDirectory;
 import org.apache.lucene.util.InfoStream;
@@ -28,6 +33,7 @@ import org.apache.lucene.util.StringHelper;
 import org.apache.lucene.util.Version;
 import org.opensearch.knn.KNNTestCase;
 import org.opensearch.knn.index.engine.KNNEngine;
+import org.opensearch.knn.memoryoptsearch.faiss.MMapFloatVectorValues;
 
 import org.apache.lucene.index.Sorter;
 
@@ -130,7 +136,7 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
         }
     }
 
-    private SegmentReadState writeVectors(MMapDirectory dir, float[][] vectors) throws Exception {
+    private SegmentReadState writeVectors(Directory dir, float[][] vectors) throws Exception {
         FieldInfo fieldInfo = createFieldInfo();
         FieldInfos fieldInfos = new FieldInfos(new FieldInfo[] { fieldInfo });
 
@@ -258,6 +264,73 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
             false,
             false
         );
+    }
+
+    @SneakyThrows
+    public void testScorer_nonMmapDirectory_matchesExpectedSimilarity() {
+        // ByteBuffersDirectory does not back onto mmap'd memory, so getFloatVectorValues() returns
+        // the plain (non-MMapFloatVectorValues-wrapped) HalfFloatVectorValues. This uses the
+        // scorer() fallback path (used when native mmap addresses are unavailable)
+        try (Directory dir = new ByteBuffersDirectory()) {
+            float[][] vectors = generateVectors(NUM_VECTORS, DIMENSION);
+            SegmentReadState readState = writeVectors(dir, vectors);
+
+            try (FlatVectorsReader reader = new KNN1040HalfFloatFlatVectorsFormat().fieldsReader(readState)) {
+                FloatVectorValues values = reader.getFloatVectorValues(FIELD_NAME);
+                assertFalse("Expected non-mmap-backed values for this test", values instanceof MMapFloatVectorValues);
+
+                float[] query = generateVectors(1, DIMENSION)[0];
+                VectorScorer scorer = values.scorer(query);
+                assertNotNull(scorer);
+
+                for (int i = 0; i < NUM_VECTORS; i++) {
+                    assertTrue(scorer.iterator().nextDoc() != DocIdSetIterator.NO_MORE_DOCS);
+                    float[] decoded = new float[DIMENSION];
+                    for (int d = 0; d < DIMENSION; d++) {
+                        decoded[d] = Float.float16ToFloat(Float.floatToFloat16(vectors[i][d]));
+                    }
+                    float expected = VectorSimilarityFunction.EUCLIDEAN.compare(query, decoded);
+                    assertEquals("Vector " + i, expected, scorer.score(), 1e-3);
+                }
+            }
+        }
+    }
+
+    @SneakyThrows
+    public void testScorerBulk_nonMmapDirectory_matchesExpectedSimilarity() {
+        // Exercises VectorScorer.bulk(), which is what the reader's exhaustive search() path uses.
+        // With mmap unavailable, this goes through HalfFloatBytesRandomVectorScorer.bulkScore() when SIMD
+        // is supported, or the pure-Java fallback (via the default Bulk implementation) otherwise.
+        try (Directory dir = new ByteBuffersDirectory()) {
+            float[][] vectors = generateVectors(NUM_VECTORS, DIMENSION);
+            SegmentReadState readState = writeVectors(dir, vectors);
+
+            try (FlatVectorsReader reader = new KNN1040HalfFloatFlatVectorsFormat().fieldsReader(readState)) {
+                FloatVectorValues values = reader.getFloatVectorValues(FIELD_NAME);
+                assertFalse("Expected non-mmap-backed values for this test", values instanceof MMapFloatVectorValues);
+
+                float[] query = generateVectors(1, DIMENSION)[0];
+                VectorScorer scorer = values.scorer(query);
+                assertNotNull(scorer);
+
+                VectorScorer.Bulk bulk = scorer.bulk(null);
+                DocAndFloatFeatureBuffer buffer = new DocAndFloatFeatureBuffer();
+                float maxScore = bulk.nextDocsAndScores(NUM_VECTORS, null, buffer);
+                assertEquals(NUM_VECTORS, buffer.size);
+
+                float expectedMax = Float.NEGATIVE_INFINITY;
+                for (int i = 0; i < NUM_VECTORS; i++) {
+                    float[] decoded = new float[DIMENSION];
+                    for (int d = 0; d < DIMENSION; d++) {
+                        decoded[d] = Float.float16ToFloat(Float.floatToFloat16(vectors[i][d]));
+                    }
+                    float expected = VectorSimilarityFunction.EUCLIDEAN.compare(query, decoded);
+                    assertEquals("Vector " + i, expected, buffer.features[i], 1e-3);
+                    expectedMax = Math.max(expectedMax, expected);
+                }
+                assertEquals(expectedMax, maxScore, 1e-3);
+            }
+        }
     }
 
     @SneakyThrows

@@ -64,7 +64,7 @@ public class NativeEngines990KnnVectorsScorer implements FlatVectorsScorer {
         return delegate.getRandomVectorScorerSupplier(similarityFunction, vectorValues);
     }
 
-    private static SimdVectorComputeService.SimilarityFunctionType getNativeFunctionType(
+    public static SimdVectorComputeService.SimilarityFunctionType getNativeFunctionType(
         final VectorSimilarityFunction similarityFunction
     ) {
         return switch (similarityFunction) {

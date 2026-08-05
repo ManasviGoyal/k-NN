@@ -29,6 +29,9 @@ import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.hnsw.RandomVectorScorer;
+import org.opensearch.knn.index.codec.scorer.NativeEngines990KnnVectorsScorer;
+import org.opensearch.knn.jni.SimdFp16;
+import org.opensearch.knn.jni.SimdVectorComputeService;
 import org.opensearch.knn.memoryoptsearch.MemorySegmentAddressExtractorUtil;
 import org.opensearch.knn.memoryoptsearch.faiss.MMapFloatVectorValues;
 
@@ -48,7 +51,7 @@ import static org.opensearch.knn.index.codec.KNN1040Codec.KNN1040HalfFloatFlatVe
 import static org.opensearch.knn.index.codec.KNN1040Codec.KNN1040HalfFloatFlatVectorsFormat.VERSION_START;
 
 /**
- * Reader for half-precision (FP16) flat vector fields.
+ * Reader for half-precision flat vector fields.
  *
  * <p>On segment open, this reader:
  * <ol>
@@ -287,8 +290,6 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
         }
     }
 
-    // ─── FP16 → FP32 decoding FloatVectorValues ───────────────────────────────────
-
     /**
      * Decodes FP16 bytes to float[] on access. When wrapped by MMapFloatVectorValues,
      * the SIMD scorer reads FP16 directly from native memory instead of calling vectorValue().
@@ -376,6 +377,11 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
             return value;
         }
 
+        private void rawVectorBytes(int internalVectorId, byte[] dest, int destOffset) throws IOException {
+            slice.seek((long) internalVectorId * byteSize);
+            slice.readBytes(dest, destOffset, byteSize);
+        }
+
         @Override
         public VectorScorer scorer(float[] target) throws IOException {
             if (size() == 0) return null;
@@ -388,6 +394,29 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
                 similarity
             );
             DocIndexIterator iterator = copy.iterator();
+
+            final SimdVectorComputeService.SimilarityFunctionType nativeType = NativeEngines990KnnVectorsScorer
+                .getNativeFunctionType(similarity);
+            if (nativeType != null && SimdFp16.isSIMDSupported()) {
+                final RandomVectorScorer rvs = new HalfFloatBytesRandomVectorScorer(copy, target, nativeType);
+                return new VectorScorer() {
+                    @Override
+                    public float score() throws IOException {
+                        return rvs.score(iterator.index());
+                    }
+
+                    @Override
+                    public DocIdSetIterator iterator() {
+                        return iterator;
+                    }
+
+                    @Override
+                    public Bulk bulk(DocIdSetIterator matchingDocs) {
+                        return Bulk.fromRandomScorerSparse(rvs, iterator, matchingDocs);
+                    }
+                };
+            }
+
             return new VectorScorer() {
                 @Override
                 public float score() throws IOException {
@@ -404,6 +433,66 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
         @Override
         public FloatVectorValues copy() throws IOException {
             return new HalfFloatVectorValues(dimension, size, slice.clone(), ordToDocReader, flatVectorsScorer, similarity);
+        }
+    }
+
+    /**
+     * Scores FP16 vectors via native SIMD, reading raw (undecoded) FP16 bytes directly from the
+     * segment's non-mmap-backed {@link IndexInput} slice. The search context (query + similarity
+     * function) is saved once per {@link #bulkScore} call rather than once per vector, matching
+     * how {@link org.opensearch.knn.memoryoptsearch.faiss.NativeRandomVectorScorer} amortizes this
+     * cost for the mmap path.
+     */
+    private static final class HalfFloatBytesRandomVectorScorer extends RandomVectorScorer.AbstractRandomVectorScorer {
+        private final HalfFloatVectorValues values;
+        private final float[] target;
+        private final int nativeFunctionTypeOrd;
+        private byte[] vectorBytesBuffer;
+        private final float[] singleScoreBuffer = new float[1];
+
+        HalfFloatBytesRandomVectorScorer(
+            HalfFloatVectorValues values,
+            float[] target,
+            SimdVectorComputeService.SimilarityFunctionType nativeFunctionType
+        ) {
+            super(values);
+            this.values = values;
+            this.target = target;
+            this.nativeFunctionTypeOrd = nativeFunctionType.ordinal();
+            this.vectorBytesBuffer = new byte[values.byteSize];
+        }
+
+        @Override
+        public float score(int node) throws IOException {
+            values.rawVectorBytes(node, vectorBytesBuffer, 0);
+            SimdVectorComputeService.scoreSimilarityInBulkFromBytes(
+                target,
+                vectorBytesBuffer,
+                values.dimension,
+                nativeFunctionTypeOrd,
+                1,
+                singleScoreBuffer
+            );
+            return singleScoreBuffer[0];
+        }
+
+        @Override
+        public float bulkScore(int[] nodes, float[] scores, int numNodes) throws IOException {
+            int requiredBytes = numNodes * values.byteSize;
+            if (vectorBytesBuffer.length < requiredBytes) {
+                vectorBytesBuffer = new byte[requiredBytes];
+            }
+            for (int i = 0; i < numNodes; i++) {
+                values.rawVectorBytes(nodes[i], vectorBytesBuffer, i * values.byteSize);
+            }
+            return SimdVectorComputeService.scoreSimilarityInBulkFromBytes(
+                target,
+                vectorBytesBuffer,
+                values.dimension,
+                nativeFunctionTypeOrd,
+                numNodes,
+                scores
+            );
         }
     }
 }
