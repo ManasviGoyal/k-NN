@@ -182,7 +182,12 @@ public class EngineFieldMapper extends KNNVectorFieldMapper {
             } else {
                 this.vectorFieldType = null;
             }
-            this.vectorTransformer = null;
+            // Lucene fields have historically never transformed vectors on write. The one exception is
+            // half_float, whose flat format scores cosine with the native FP16_COSINE kernel and therefore
+            // needs unit-length vectors on disk -- see LuceneFlatMethod#getVectorTransformer. Every other
+            // Lucene data type keeps the historical no-op, and for non-cosine spaces (or the HNSW method,
+            // which does not override getVectorTransformer) the context still yields a no-op transformer.
+            this.vectorTransformer = vectorDataType == VectorDataType.HALF_FLOAT ? knnLibraryIndexingContext.getVectorTransformer() : null;
         } else {
             // MethodFieldMapper attributes
             this.vectorFieldType = null;
@@ -311,7 +316,9 @@ public class EngineFieldMapper extends KNNVectorFieldMapper {
 
     @Override
     protected VectorTransformer getVectorTransformer() {
-        if (isLuceneEngine) {
+        // Only the Lucene branch of the constructor leaves this null, and only for the data types that
+        // must keep the historical no-op on write. Non-Lucene engines always resolve a transformer.
+        if (vectorTransformer == null) {
             return super.getVectorTransformer();
         }
         return vectorTransformer;
