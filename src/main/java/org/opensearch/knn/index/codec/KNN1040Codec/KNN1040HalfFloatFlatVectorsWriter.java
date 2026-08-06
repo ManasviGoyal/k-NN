@@ -262,8 +262,9 @@ public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
         );
     }
 
-    // ─── Per-field writer: stores float[] on heap during indexing ────────────────
-
+    /**
+     * Per-field writer that stores {@code float[]} on heap during indexing.
+     */
     private static class FloatFieldWriter extends FlatFieldVectorsWriter<float[]> {
         private final FieldInfo fieldInfo;
         private final List<float[]> vectors = new ArrayList<>();
