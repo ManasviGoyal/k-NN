@@ -21,8 +21,12 @@ import org.apache.lucene.index.SegmentReadState;
 import org.apache.lucene.index.SegmentWriteState;
 import org.apache.lucene.index.VectorEncoding;
 import org.apache.lucene.index.VectorSimilarityFunction;
+import org.apache.lucene.search.AcceptDocs;
 import org.apache.lucene.search.DocAndFloatFeatureBuffer;
 import org.apache.lucene.search.DocIdSetIterator;
+import org.apache.lucene.search.KnnCollector;
+import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.TopKnnCollector;
 import org.apache.lucene.search.VectorScorer;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
@@ -31,6 +35,7 @@ import org.apache.lucene.store.MMapDirectory;
 import org.apache.lucene.util.InfoStream;
 import org.apache.lucene.util.StringHelper;
 import org.apache.lucene.util.Version;
+import org.apache.lucene.util.hnsw.RandomVectorScorer;
 import org.opensearch.knn.KNNTestCase;
 import org.opensearch.knn.index.engine.KNNEngine;
 import org.opensearch.knn.memoryoptsearch.faiss.MMapFloatVectorValues;
@@ -137,7 +142,11 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
     }
 
     private SegmentReadState writeVectors(Directory dir, float[][] vectors) throws Exception {
-        FieldInfo fieldInfo = createFieldInfo();
+        return writeVectors(dir, vectors, VectorSimilarityFunction.EUCLIDEAN);
+    }
+
+    private SegmentReadState writeVectors(Directory dir, float[][] vectors, VectorSimilarityFunction similarity) throws Exception {
+        FieldInfo fieldInfo = createFieldInfo(similarity);
         FieldInfos fieldInfos = new FieldInfos(new FieldInfo[] { fieldInfo });
 
         SegmentInfo segmentInfo = new SegmentInfo(
@@ -244,6 +253,10 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
     }
 
     private FieldInfo createFieldInfo() {
+        return createFieldInfo(VectorSimilarityFunction.EUCLIDEAN);
+    }
+
+    private FieldInfo createFieldInfo(VectorSimilarityFunction similarity) {
         return new FieldInfo(
             FIELD_NAME,
             0,
@@ -260,7 +273,7 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
             0,
             DIMENSION,
             VectorEncoding.FLOAT32,
-            VectorSimilarityFunction.EUCLIDEAN,
+            similarity,
             false,
             false
         );
@@ -269,7 +282,7 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
     @SneakyThrows
     public void testScorer_nonMmapDirectory_matchesExpectedSimilarity() {
         // ByteBuffersDirectory does not back onto mmap'd memory, so getFloatVectorValues() returns
-        // the plain (non-MMapFloatVectorValues-wrapped) HalfFloatVectorValues. This uses the
+        // the plain (non-MMapFloatVectorValues-wrapped) KNN1040HalfFloatFlatVectorsValues. This uses the
         // scorer() fallback path (used when native mmap addresses are unavailable)
         try (Directory dir = new ByteBuffersDirectory()) {
             float[][] vectors = generateVectors(NUM_VECTORS, DIMENSION);
@@ -299,7 +312,7 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
     @SneakyThrows
     public void testScorerBulk_nonMmapDirectory_matchesExpectedSimilarity() {
         // Exercises VectorScorer.bulk(), which is what the reader's exhaustive search() path uses.
-        // With mmap unavailable, this goes through HalfFloatBytesRandomVectorScorer.bulkScore() when SIMD
+        // With mmap unavailable, this goes through KNN1040HalfFloatFlatVectorsScorer.bulkScore() when SIMD
         // is supported, or the pure-Java fallback (via the default Bulk implementation) otherwise.
         try (Directory dir = new ByteBuffersDirectory()) {
             float[][] vectors = generateVectors(NUM_VECTORS, DIMENSION);
@@ -343,7 +356,7 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
                 FloatVectorValues values = reader.getFloatVectorValues(FIELD_NAME);
                 assertNotNull(values);
 
-                // MMapFloatVectorValues wraps HalfFloatVectorValues which implements HasIndexSlice
+                // MMapFloatVectorValues wraps KNN1040HalfFloatFlatVectorsValues which implements HasIndexSlice
                 // This enables prefetch in PrefetchableFlatVectorScorer
                 assertTrue(
                     "FloatVectorValues should implement HasIndexSlice for prefetch support",
@@ -353,6 +366,91 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
                 assertNotNull("getSlice() should return non-null IndexInput for mmap-backed values", hasSlice.getSlice());
             }
         }
+    }
+
+    @SneakyThrows
+    public void testSearch_cosineWithMmapDirectory_doesNotThrowAndMatchesExpected() {
+        // Regression test for the original crash: COSINE has no native SIMD type
+        // (NativeEngines990KnnVectorsScorer#getNativeFunctionType returns null for it), so with mmap
+        // available this used to fall through to Lucene's own delegate scorer, which detects
+        // HasIndexSlice on KNN1040HalfFloatFlatVectorsValues and reads the slice assuming 4 bytes/dimension
+        // (float32) instead of this format's 2 bytes/dimension (FP16) -- overreading past the
+        // buffer on the tail vectors and throwing IndexOutOfBoundsException. This is the deterministic
+        // trigger: COSINE always takes this path regardless of whether mmap extraction succeeds.
+        try (MMapDirectory dir = new MMapDirectory(createTempDir())) {
+            float[][] vectors = generateVectors(NUM_VECTORS, DIMENSION);
+            SegmentReadState readState = writeVectors(dir, vectors, VectorSimilarityFunction.COSINE);
+
+            try (FlatVectorsReader reader = new KNN1040HalfFloatFlatVectorsFormat().fieldsReader(readState)) {
+                assertTrue(
+                    "expected mmap-backed values for this test",
+                    reader.getFloatVectorValues(FIELD_NAME) instanceof MMapFloatVectorValues
+                );
+
+                float[] query = generateVectors(1, DIMENSION)[0];
+                KnnCollector collector = new TopKnnCollector(NUM_VECTORS, Integer.MAX_VALUE);
+                reader.search(FIELD_NAME, query, collector, AcceptDocs.fromLiveDocs(null, NUM_VECTORS));
+
+                // topDocs() drains the underlying queue, so call it exactly once.
+                ScoreDoc[] scoreDocs = collector.topDocs().scoreDocs;
+                assertEquals(NUM_VECTORS, scoreDocs.length);
+                float expectedBest = bestExpectedScore(vectors, query, VectorSimilarityFunction.COSINE, NUM_VECTORS);
+                assertEquals(expectedBest, scoreDocs[0].score, 1e-3);
+            }
+        }
+    }
+
+    @SneakyThrows
+    public void testGetRandomVectorScorer_nonMmapDirectory_matchesExpectedSimilarity() {
+        try (Directory dir = new ByteBuffersDirectory()) {
+            float[][] vectors = generateVectors(NUM_VECTORS, DIMENSION);
+            SegmentReadState readState = writeVectors(dir, vectors);
+
+            try (FlatVectorsReader reader = new KNN1040HalfFloatFlatVectorsFormat().fieldsReader(readState)) {
+                float[] query = generateVectors(1, DIMENSION)[0];
+                RandomVectorScorer scorer = reader.getRandomVectorScorer(FIELD_NAME, query);
+                assertNotNull(scorer);
+                assertEquals(NUM_VECTORS, scorer.maxOrd());
+
+                for (int i = 0; i < NUM_VECTORS; i++) {
+                    float[] decoded = new float[DIMENSION];
+                    for (int d = 0; d < DIMENSION; d++) {
+                        decoded[d] = Float.float16ToFloat(Float.floatToFloat16(vectors[i][d]));
+                    }
+                    float expected = VectorSimilarityFunction.EUCLIDEAN.compare(query, decoded);
+                    assertEquals("Vector " + i, expected, scorer.score(i), 1e-3);
+                }
+            }
+        }
+    }
+
+    @SneakyThrows
+    public void testSearch_nonMmapDirectory_collectsAllVectorsWithoutThrowing() {
+        // End-to-end exhaustive search() through the same non-mmap fallback path as the test above,
+        // confirming the reader's own bulk-scoring loop (not just getRandomVectorScorer()) is safe.
+        try (Directory dir = new ByteBuffersDirectory()) {
+            float[][] vectors = generateVectors(NUM_VECTORS, DIMENSION);
+            SegmentReadState readState = writeVectors(dir, vectors);
+
+            try (FlatVectorsReader reader = new KNN1040HalfFloatFlatVectorsFormat().fieldsReader(readState)) {
+                float[] query = generateVectors(1, DIMENSION)[0];
+                KnnCollector collector = new TopKnnCollector(NUM_VECTORS, Integer.MAX_VALUE);
+                reader.search(FIELD_NAME, query, collector, AcceptDocs.fromLiveDocs(null, NUM_VECTORS));
+                assertEquals(NUM_VECTORS, collector.topDocs().scoreDocs.length);
+            }
+        }
+    }
+
+    private float bestExpectedScore(float[][] vectors, float[] query, VectorSimilarityFunction similarity, int numVectors) {
+        float best = Float.NEGATIVE_INFINITY;
+        for (int i = 0; i < numVectors; i++) {
+            float[] decoded = new float[DIMENSION];
+            for (int d = 0; d < DIMENSION; d++) {
+                decoded[d] = Float.float16ToFloat(Float.floatToFloat16(vectors[i][d]));
+            }
+            best = Math.max(best, similarity.compare(query, decoded));
+        }
+        return best;
     }
 
     private float[][] generateVectors(int count, int dimension) {
