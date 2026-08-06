@@ -1091,6 +1091,29 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
         );
     }
 
+    public void testTypeParser_parse_fromModel_halfFloat_throws() throws IOException {
+        // Training runs on Faiss, which does not support HALF_FLOAT, so no model can carry it.
+        String fieldName = "test-field-name";
+        String indexName = "test-index-name";
+        Settings settings = Settings.builder().put(settings(CURRENT).build()).put(KNN_INDEX, true).build();
+
+        ModelDao modelDao = mock(ModelDao.class);
+        KNNVectorFieldMapper.TypeParser typeParser = new KNNVectorFieldMapper.TypeParser(() -> modelDao);
+
+        XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()
+            .startObject()
+            .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+            .field(MODEL_ID, "test-model-id")
+            .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+            .endObject();
+
+        IllegalArgumentException e = expectThrows(
+            IllegalArgumentException.class,
+            () -> typeParser.parse(fieldName, xContentBuilderToMap(xContentBuilder), buildParserContext(indexName, settings))
+        );
+        assertTrue(e.getMessage(), e.getMessage().contains("HALF_FLOAT"));
+    }
+
     public void testTypeParser_parse_fromModel() throws IOException {
         // Check that modelContext is set for the builder
         String fieldName = "test-field-name";
@@ -1642,10 +1665,7 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
             assertTrue("FP16 flat should create a KnnFloatVectorField", field instanceof KnnFloatVectorField);
             assertEquals(VectorEncoding.FLOAT32, field.fieldType().vectorEncoding());
             assertEquals(TEST_DIMENSION, field.fieldType().vectorDimension());
-            assertEquals(
-                VectorSimilarityFunction.EUCLIDEAN,
-                field.fieldType().vectorSimilarityFunction()
-            );
+            assertEquals(VectorSimilarityFunction.EUCLIDEAN, field.fieldType().vectorSimilarityFunction());
         }
     }
 

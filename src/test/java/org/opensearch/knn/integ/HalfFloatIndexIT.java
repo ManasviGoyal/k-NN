@@ -116,6 +116,52 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
         assertEquals("3", results.get(0).getDocId());
     }
 
+    /**
+     * Force merges an index-sorted index. The sort key ascends with doc id while the sort is
+     * descending, so each later segment sorts entirely before the earlier ones and the merge must
+     * interleave them. A merge that walks the source readers in order would emit descending doc
+     * ids and fail. {@link #testHalfFloatFlatIndex_forceMerge} cannot catch this because without
+     * an index sort every reader maps to a contiguous increasing block of doc ids.
+     */
+    @SneakyThrows
+    public void testHalfFloatFlatIndex_indexSortedForceMerge() {
+        final String sortFieldName = "sort_key";
+
+        Settings settings = Settings.builder()
+            .put("number_of_shards", 1)
+            .put("number_of_replicas", 0)
+            .put("index.knn", true)
+            .put("index.sort.field", sortFieldName)
+            .put("index.sort.order", "desc")
+            .build();
+        createKnnIndex(INDEX_NAME, settings, buildHalfFloatMappingWithSortField(sortFieldName));
+
+        // addKnnDocWithAttributes refreshes per call, so each doc lands in its own segment and the
+        // merge has several readers to interleave.
+        Float[][] vectors = {
+            { 1.0f, 2.0f, 3.0f, 4.0f },
+            { 5.0f, 6.0f, 7.0f, 8.0f },
+            { 0.1f, 0.2f, 0.3f, 0.4f },
+            { 10.0f, 10.0f, 10.0f, 10.0f } };
+        for (int i = 0; i < vectors.length; i++) {
+            addKnnDocWithAttributes(INDEX_NAME, String.valueOf(i + 1), FIELD_NAME, vectors[i], Map.of(sortFieldName, String.valueOf(i)));
+        }
+
+        forceMergeKnnIndex(INDEX_NAME, 1);
+
+        float[] queryVector = { 0.0f, 0.0f, 0.0f, 0.0f };
+        Response response = searchKNNIndex(INDEX_NAME, buildSearchQuery(FIELD_NAME, 4, queryVector, null), 4);
+        List<KNNResult> results = parseSearchResponse(EntityUtils.toString(response.getEntity()), FIELD_NAME);
+
+        assertEquals(4, results.size());
+        // Doc 3 is closest to the origin; if the merge scrambled the doc-to-vector mapping the
+        // ranking would not survive.
+        assertEquals("3", results.get(0).getDocId());
+        assertEquals("1", results.get(1).getDocId());
+        assertEquals("2", results.get(2).getDocId());
+        assertEquals("4", results.get(3).getDocId());
+    }
+
     // ────────────────────────────────────────────────────────────────────────────
     // Delete + search - sparse segment exercises ordToDoc mapping
     // ────────────────────────────────────────────────────────────────────────────
@@ -322,6 +368,25 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
             .method(KNNJsonIndexMappingsBuilder.Method.builder().methodName("flat").engine("lucene").spaceType(spaceType).build())
             .build()
             .getIndexMapping();
+    }
+
+    private String buildHalfFloatMappingWithSortField(String sortFieldName) {
+        return "{"
+            + "\"properties\":{"
+            + "\""
+            + FIELD_NAME
+            + "\":{"
+            + "\"type\":\"knn_vector\","
+            + "\"dimension\":"
+            + DIMENSION
+            + ","
+            + "\"data_type\":\"half_float\","
+            + "\"method\":{\"name\":\"flat\",\"engine\":\"lucene\",\"space_type\":\"l2\"}"
+            + "},"
+            + "\""
+            + sortFieldName
+            + "\":{\"type\":\"long\"}"
+            + "}}";
     }
 
     private void flushIndex(String index, boolean force) throws Exception {

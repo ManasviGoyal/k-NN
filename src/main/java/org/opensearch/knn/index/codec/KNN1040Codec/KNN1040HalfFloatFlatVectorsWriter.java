@@ -6,6 +6,7 @@
 package org.opensearch.knn.index.codec.KNN1040Codec;
 
 import org.apache.lucene.codecs.CodecUtil;
+import org.apache.lucene.codecs.KnnVectorsWriter;
 import org.apache.lucene.codecs.hnsw.FlatFieldVectorsWriter;
 import org.apache.lucene.codecs.hnsw.FlatVectorsScorer;
 import org.apache.lucene.codecs.hnsw.FlatVectorsWriter;
@@ -18,6 +19,7 @@ import org.apache.lucene.index.KnnVectorValues;
 import org.apache.lucene.index.MergeState;
 import org.apache.lucene.index.SegmentWriteState;
 import org.apache.lucene.index.Sorter;
+import org.apache.lucene.index.VectorEncoding;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.store.IndexOutput;
 import org.apache.lucene.util.IOUtils;
@@ -31,6 +33,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.opensearch.knn.index.codec.KNN1040Codec.KNN1040HalfFloatFlatVectorsFormat.DIRECT_MONOTONIC_BLOCK_SHIFT;
 import static org.opensearch.knn.index.codec.KNN1040Codec.KNN1040HalfFloatFlatVectorsFormat.META_CODEC_NAME;
 import static org.opensearch.knn.index.codec.KNN1040Codec.KNN1040HalfFloatFlatVectorsFormat.META_EXTENSION;
 import static org.opensearch.knn.index.codec.KNN1040Codec.KNN1040HalfFloatFlatVectorsFormat.VECTOR_DATA_CODEC_NAME;
@@ -56,7 +59,8 @@ public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
 
     private static final long SHALLOW_RAM_BYTES_USED = RamUsageEstimator.shallowSizeOfInstance(KNN1040HalfFloatFlatVectorsWriter.class);
 
-    private static final int DIRECT_MONOTONIC_BLOCK_SHIFT = 16;
+    /** Byte alignment for each field's vector data region. See {@link #alignOutput(IndexOutput)}. */
+    private static final int VECTOR_DATA_ALIGNMENT = 64;
 
     private final SegmentWriteState segmentWriteState;
     private final IndexOutput meta;
@@ -98,10 +102,33 @@ public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
 
     @Override
     public FlatFieldVectorsWriter<?> addField(FieldInfo fieldInfo) throws IOException {
+        checkFloat32Encoding(fieldInfo);
         // NOTE: FlatFieldVectorsWriter has no public static create() — we use our own inline impl.
         FlatFieldVectorsWriter<?> fieldWriter = new FloatFieldWriter(fieldInfo);
         fields.add(new FieldData(fieldWriter, fieldInfo));
         return fieldWriter;
+    }
+
+    /** FP16 is stored under {@link VectorEncoding#FLOAT32}; byte-encoded fields are unsupported. */
+    private static void checkFloat32Encoding(FieldInfo fieldInfo) {
+        if (fieldInfo.getVectorEncoding() != VectorEncoding.FLOAT32) {
+            throw new IllegalArgumentException(
+                "FP16 flat format only supports FLOAT32 encoding, got ["
+                    + fieldInfo.getVectorEncoding()
+                    + "] for field ["
+                    + fieldInfo.name
+                    + "]"
+            );
+        }
+    }
+
+    /**
+     * Returns the aligned offset for a field's vector data, mirroring {@code
+     * Lucene99FlatVectorsWriter.alignOutput}. Needed because {@link #writeMeta} also writes
+     * ord-to-doc data into {@code .vec}, so a later field would otherwise start unaligned.
+     */
+    private static long alignOutput(IndexOutput output) throws IOException {
+        return output.alignFilePointer(VECTOR_DATA_ALIGNMENT);
     }
 
     @Override
@@ -133,39 +160,31 @@ public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
 
     @Override
     public void mergeOneFlatVectorField(FieldInfo fieldInfo, MergeState mergeState) throws IOException {
-        long vectorDataOffset = vectorData.getFilePointer();
-        int dimension = fieldInfo.getVectorDimension();
-        byte[] outputBuffer = new byte[dimension * Short.BYTES];
+        checkFloat32Encoding(fieldInfo);
 
-        DocsWithFieldSet docsWithFieldSet = new DocsWithFieldSet();
-        int docCount = 0;
+        // Yields vectors in merged doc order, handling deletions and index sorting. A per-reader
+        // loop cannot: under an index sort the readers' new doc ids interleave.
+        final FloatVectorValues mergedValues = KnnVectorsWriter.MergedVectorValues.mergeFloatVectorValues(fieldInfo, mergeState);
 
-        for (int i = 0; i < mergeState.knnVectorsReaders.length; i++) {
-            if (mergeState.knnVectorsReaders[i] == null) {
-                continue;
-            }
-            FloatVectorValues vectorValues = mergeState.knnVectorsReaders[i].getFloatVectorValues(fieldInfo.name);
-            if (vectorValues == null) {
-                continue;
-            }
-            KnnVectorValues.DocIndexIterator iterator = vectorValues.iterator();
-            MergeState.DocMap docMap = mergeState.docMaps[i];
-            int doc;
-            while ((doc = iterator.nextDoc()) != KnnVectorValues.DocIndexIterator.NO_MORE_DOCS) {
-                int newDoc = docMap.get(doc);
-                if (newDoc == -1) {
-                    continue;
-                }
-                float[] vector = vectorValues.vectorValue(iterator.index());
-                KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArray(vector, outputBuffer, vector.length);
-                vectorData.writeBytes(outputBuffer, 0, dimension * Short.BYTES);
-                docsWithFieldSet.add(newDoc);
-                docCount++;
-            }
+        final long vectorDataOffset = alignOutput(vectorData);
+        final DocsWithFieldSet docsWithField = writeVectorData(vectorData, mergedValues, fieldInfo.getVectorDimension());
+        final long vectorDataLength = vectorData.getFilePointer() - vectorDataOffset;
+
+        writeMeta(fieldInfo, segmentWriteState.segmentInfo.maxDoc(), vectorDataOffset, vectorDataLength, docsWithField);
+    }
+
+    /** Encodes vectors to FP16 and writes them, returning the documents that have a vector. */
+    private static DocsWithFieldSet writeVectorData(IndexOutput output, FloatVectorValues values, int dimension) throws IOException {
+        final byte[] outputBuffer = new byte[dimension * Short.BYTES];
+        final DocsWithFieldSet docsWithField = new DocsWithFieldSet();
+        final KnnVectorValues.DocIndexIterator iterator = values.iterator();
+        for (int doc = iterator.nextDoc(); doc != DocIdSetIterator.NO_MORE_DOCS; doc = iterator.nextDoc()) {
+            final float[] vector = values.vectorValue(iterator.index());
+            KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArray(vector, outputBuffer, dimension);
+            output.writeBytes(outputBuffer, 0, outputBuffer.length);
+            docsWithField.add(doc);
         }
-
-        long vectorDataLength = vectorData.getFilePointer() - vectorDataOffset;
-        writeMeta(fieldInfo, vectorDataOffset, vectorDataLength, docCount, docsWithFieldSet);
+        return docsWithField;
     }
 
     @Override
@@ -183,89 +202,65 @@ public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
     }
 
     private void writeField(FlatFieldVectorsWriter<?> fieldWriter, FieldInfo fieldInfo, int maxDoc) throws IOException {
-        int dimension = fieldInfo.getVectorDimension();
-        byte[] outputBuffer = new byte[dimension * Short.BYTES];
-
-        long vectorDataOffset = vectorData.getFilePointer();
+        final int dimension = fieldInfo.getVectorDimension();
+        final byte[] outputBuffer = new byte[dimension * Short.BYTES];
         @SuppressWarnings("unchecked")
-        List<float[]> vectors = (List<float[]>) fieldWriter.getVectors();
-        DocsWithFieldSet docsWithFieldSet = fieldWriter.getDocsWithFieldSet();
+        final List<float[]> vectors = (List<float[]>) fieldWriter.getVectors();
 
+        final long vectorDataOffset = alignOutput(vectorData);
         for (float[] vector : vectors) {
-            KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArray(vector, outputBuffer, vector.length);
-            vectorData.writeBytes(outputBuffer, 0, dimension * Short.BYTES);
+            KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArray(vector, outputBuffer, dimension);
+            vectorData.writeBytes(outputBuffer, 0, outputBuffer.length);
         }
+        final long vectorDataLength = vectorData.getFilePointer() - vectorDataOffset;
 
-        long vectorDataLength = vectorData.getFilePointer() - vectorDataOffset;
-        writeMeta(fieldInfo, vectorDataOffset, vectorDataLength, vectors.size(), docsWithFieldSet);
+        writeMeta(fieldInfo, maxDoc, vectorDataOffset, vectorDataLength, fieldWriter.getDocsWithFieldSet());
     }
 
     private void writeSortingField(FlatFieldVectorsWriter<?> fieldWriter, FieldInfo fieldInfo, int maxDoc, Sorter.DocMap sortMap)
         throws IOException {
-        int dimension = fieldInfo.getVectorDimension();
-        byte[] outputBuffer = new byte[dimension * Short.BYTES];
-
-        long vectorDataOffset = vectorData.getFilePointer();
+        final int dimension = fieldInfo.getVectorDimension();
+        final byte[] outputBuffer = new byte[dimension * Short.BYTES];
         @SuppressWarnings("unchecked")
-        List<float[]> vectors = (List<float[]>) fieldWriter.getVectors();
-        DocsWithFieldSet docsWithFieldSet = fieldWriter.getDocsWithFieldSet();
+        final List<float[]> vectors = (List<float[]>) fieldWriter.getVectors();
 
-        int[] ordMap = new int[vectors.size()];
-        DocsWithFieldSet sortedDocsWithField = new DocsWithFieldSet();
-        int docId;
-        int ord = 0;
-        DocIdSetIterator iterator = docsWithFieldSet.iterator();
-        while ((docId = iterator.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
-            int newDocId = sortMap.oldToNew(docId);
-            ordMap[ord] = newDocId;
-            ord++;
+        final DocsWithFieldSet docsWithFieldSet = fieldWriter.getDocsWithFieldSet();
+        final int[] ordMap = new int[docsWithFieldSet.cardinality()]; // new ord to old ord
+        final DocsWithFieldSet newDocsWithField = new DocsWithFieldSet();
+        mapOldOrdToNewOrd(docsWithFieldSet, sortMap, null, ordMap, newDocsWithField);
+
+        final long vectorDataOffset = alignOutput(vectorData);
+        for (int ordinal : ordMap) {
+            final float[] vector = vectors.get(ordinal);
+            KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArray(vector, outputBuffer, dimension);
+            vectorData.writeBytes(outputBuffer, 0, outputBuffer.length);
         }
+        final long vectorDataLength = vectorData.getFilePointer() - vectorDataOffset;
 
-        Integer[] sortedOrds = new Integer[vectors.size()];
-        for (int i = 0; i < sortedOrds.length; i++) {
-            sortedOrds[i] = i;
-        }
-        java.util.Arrays.sort(sortedOrds, (a, b) -> Integer.compare(ordMap[a], ordMap[b]));
-
-        for (int i = 0; i < sortedOrds.length; i++) {
-            int sortedOrd = sortedOrds[i];
-            float[] vector = vectors.get(sortedOrd);
-            KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArray(vector, outputBuffer, vector.length);
-            vectorData.writeBytes(outputBuffer, 0, dimension * Short.BYTES);
-            sortedDocsWithField.add(ordMap[sortedOrd]);
-        }
-
-        long vectorDataLength = vectorData.getFilePointer() - vectorDataOffset;
-        writeMeta(fieldInfo, vectorDataOffset, vectorDataLength, vectors.size(), sortedDocsWithField);
+        writeMeta(fieldInfo, maxDoc, vectorDataOffset, vectorDataLength, newDocsWithField);
     }
 
-    private void writeMeta(
-        FieldInfo fieldInfo,
-        long vectorDataOffset,
-        long vectorDataLength,
-        int docCount,
-        DocsWithFieldSet docsWithFieldSet
-    ) throws IOException {
+    private void writeMeta(FieldInfo fieldInfo, int maxDoc, long vectorDataOffset, long vectorDataLength, DocsWithFieldSet docsWithField)
+        throws IOException {
         meta.writeInt(fieldInfo.number);
+        meta.writeInt(fieldInfo.getVectorEncoding().ordinal());
         meta.writeInt(fieldInfo.getVectorSimilarityFunction().ordinal());
         meta.writeVLong(vectorDataOffset);
         meta.writeVLong(vectorDataLength);
         meta.writeVInt(fieldInfo.getVectorDimension());
-        meta.writeInt(docCount);
-        OrdToDocDISIReaderConfiguration.writeStoredMeta(
-            DIRECT_MONOTONIC_BLOCK_SHIFT,
-            meta,
-            vectorData,
-            docCount,
-            segmentWriteState.segmentInfo.maxDoc(),
-            docsWithFieldSet
-        );
+
+        // write docIDs
+        final int count = docsWithField.cardinality();
+        meta.writeInt(count);
+        OrdToDocDISIReaderConfiguration.writeStoredMeta(DIRECT_MONOTONIC_BLOCK_SHIFT, meta, vectorData, count, maxDoc, docsWithField);
     }
 
     /**
      * Per-field writer that stores {@code float[]} on heap during indexing.
      */
     private static class FloatFieldWriter extends FlatFieldVectorsWriter<float[]> {
+        private static final long FIELD_WRITER_SHALLOW_RAM_BYTES_USED = RamUsageEstimator.shallowSizeOfInstance(FloatFieldWriter.class);
+
         private final FieldInfo fieldInfo;
         private final List<float[]> vectors = new ArrayList<>();
         private final DocsWithFieldSet docsWithField = new DocsWithFieldSet();
@@ -306,8 +301,11 @@ public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
 
         @Override
         public long ramBytesUsed() {
-            if (vectors.isEmpty()) return 0;
-            return (long) vectors.size() * fieldInfo.getVectorDimension() * Float.BYTES;
+            long size = FIELD_WRITER_SHALLOW_RAM_BYTES_USED;
+            if (vectors.isEmpty()) return size;
+            return size + docsWithField.ramBytesUsed() + (long) vectors.size() * (RamUsageEstimator.NUM_BYTES_OBJECT_REF
+                + RamUsageEstimator.NUM_BYTES_ARRAY_HEADER) + (long) vectors.size() * fieldInfo.getVectorDimension() * fieldInfo
+                    .getVectorEncoding().byteSize;
         }
 
         @Override

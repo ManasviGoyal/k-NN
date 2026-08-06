@@ -44,8 +44,9 @@ public class KNN1040HalfFloatFlatVectorsFormat extends FlatVectorsFormat {
     static final String VECTOR_DATA_EXTENSION = "vec";
     static final int VERSION_START = 0;
     static final int VERSION_CURRENT = VERSION_START;
+    static final int DIRECT_MONOTONIC_BLOCK_SHIFT = 16;
 
-    private static final FlatVectorsScorer SCORER = new PrefetchableFlatVectorScorer(
+    private static final FlatVectorsScorer KNN_1040_HALF_FLOAT_FLAT_VECTORS_SCORER = new PrefetchableFlatVectorScorer(
         new NativeEngines990KnnVectorsScorer(FlatVectorsScorerProvider.getLucene99FlatVectorsScorer())
     );
 
@@ -55,12 +56,12 @@ public class KNN1040HalfFloatFlatVectorsFormat extends FlatVectorsFormat {
 
     @Override
     public FlatVectorsWriter fieldsWriter(SegmentWriteState state) throws IOException {
-        return new KNN1040HalfFloatFlatVectorsWriter(state, SCORER);
+        return new KNN1040HalfFloatFlatVectorsWriter(state, KNN_1040_HALF_FLOAT_FLAT_VECTORS_SCORER);
     }
 
     @Override
     public FlatVectorsReader fieldsReader(SegmentReadState state) throws IOException {
-        return new KNN1040HalfFloatFlatVectorsReader(state, SCORER);
+        return new KNN1040HalfFloatFlatVectorsReader(state, KNN_1040_HALF_FLOAT_FLAT_VECTORS_SCORER);
     }
 
     @Override
@@ -70,11 +71,6 @@ public class KNN1040HalfFloatFlatVectorsFormat extends FlatVectorsFormat {
 
     @Override
     public String toString() {
-        return String.format("%s(scorer=%s)", getClass().getSimpleName(), SCORER);
-    }
-
-    @Override
-    public String getName() {
-        return getClass().getSimpleName();
+        return String.format("%s(scorer=%s)", getClass().getSimpleName(), KNN_1040_HALF_FLOAT_FLAT_VECTORS_SCORER);
     }
 }

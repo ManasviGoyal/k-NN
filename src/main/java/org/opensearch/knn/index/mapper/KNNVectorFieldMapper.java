@@ -529,6 +529,10 @@ public abstract class KNNVectorFieldMapper extends ParametrizedFieldMapper {
             if (builder.modelId.get() != null && SpaceType.getSpace(builder.topLevelSpaceType.get()) != SpaceType.UNDEFINED) {
                 throw new IllegalArgumentException("TopLevel Space type and model can not be both specified in the " + "mapping");
             }
+            // Training runs on Faiss, which does not support HALF_FLOAT, so no model can carry it.
+            if (builder.modelId.get() != null && builder.vectorDataType.getValue() == VectorDataType.HALF_FLOAT) {
+                throw new IllegalArgumentException("HALF_FLOAT vector data type is not supported with model_id");
+            }
 
             validateCompressionAndModeNotSet(builder, builder.name(), "model");
         }

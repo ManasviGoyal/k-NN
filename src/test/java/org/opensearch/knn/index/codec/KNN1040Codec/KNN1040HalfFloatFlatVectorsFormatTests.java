@@ -6,10 +6,22 @@
 package org.opensearch.knn.index.codec.KNN1040Codec;
 
 import lombok.SneakyThrows;
+import org.apache.lucene.codecs.Codec;
+import org.apache.lucene.codecs.KnnVectorsFormat;
 import org.apache.lucene.codecs.hnsw.FlatFieldVectorsWriter;
 import org.apache.lucene.codecs.hnsw.FlatVectorsReader;
 import org.apache.lucene.codecs.hnsw.FlatVectorsWriter;
+import org.apache.lucene.codecs.lucene104.Lucene104Codec;
 import org.apache.lucene.codecs.lucene95.HasIndexSlice;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.document.KnnFloatVectorField;
+import org.apache.lucene.document.NumericDocValuesField;
+import org.apache.lucene.document.StoredField;
+import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.IndexWriter;
+import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.KnnVectorValues;
+import org.apache.lucene.index.LeafReader;
 import org.apache.lucene.index.DocValuesSkipIndexType;
 import org.apache.lucene.index.DocValuesType;
 import org.apache.lucene.index.FieldInfo;
@@ -26,6 +38,8 @@ import org.apache.lucene.search.DocAndFloatFeatureBuffer;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.KnnCollector;
 import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.Sort;
+import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.TopKnnCollector;
 import org.apache.lucene.search.VectorScorer;
 import org.apache.lucene.store.ByteBuffersDirectory;
@@ -129,14 +143,19 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
         }
     }
 
+    /**
+     * An unknown field is a programming error, not a data condition — {@code PerFieldKnnVectorsFormat}
+     * only routes fields this reader wrote. Matches {@code Lucene99FlatVectorsReader.getFieldEntryOrThrow}.
+     */
     @SneakyThrows
-    public void testGetFloatVectorValues_unknownField_returnsNull() {
+    public void testGetFloatVectorValues_unknownField_throws() {
         try (MMapDirectory dir = new MMapDirectory(createTempDir())) {
             float[][] vectors = generateVectors(3, DIMENSION);
             SegmentReadState readState = writeVectors(dir, vectors);
 
             try (FlatVectorsReader reader = new KNN1040HalfFloatFlatVectorsFormat().fieldsReader(readState)) {
-                assertNull(reader.getFloatVectorValues("nonexistent"));
+                IllegalArgumentException e = expectThrows(IllegalArgumentException.class, () -> reader.getFloatVectorValues("nonexistent"));
+                assertTrue(e.getMessage().contains("nonexistent"));
             }
         }
     }
@@ -358,10 +377,7 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
 
                 // MMapFloatVectorValues wraps KNN1040HalfFloatFlatVectorsValues which implements HasIndexSlice
                 // This enables prefetch in PrefetchableFlatVectorScorer
-                assertTrue(
-                    "FloatVectorValues should implement HasIndexSlice for prefetch support",
-                    values instanceof HasIndexSlice
-                );
+                assertTrue("FloatVectorValues should implement HasIndexSlice for prefetch support", values instanceof HasIndexSlice);
                 HasIndexSlice hasSlice = (HasIndexSlice) values;
                 assertNotNull("getSlice() should return non-null IndexInput for mmap-backed values", hasSlice.getSlice());
             }
@@ -437,6 +453,83 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
                 KnnCollector collector = new TopKnnCollector(NUM_VECTORS, Integer.MAX_VALUE);
                 reader.search(FIELD_NAME, query, collector, AcceptDocs.fromLiveDocs(null, NUM_VECTORS));
                 assertEquals(NUM_VECTORS, collector.topDocs().scoreDocs.length);
+            }
+        }
+    }
+
+    /**
+     * Merges several segments under an index sort that interleaves them, and verifies every doc
+     * still carries the vector it was indexed with.
+     *
+     * <p>The sort key ascends with insertion order while the sort is descending, so each later
+     * segment sorts entirely <em>before</em> the earlier ones in the merged segment. A merge that
+     * walks {@code mergeState.knnVectorsReaders} in order and appends {@code docMap.get(doc)} would
+     * emit descending doc ids at the first reader boundary and trip {@code DocsWithFieldSet}'s
+     * strictly-increasing check. Without an index sort each reader maps to a contiguous increasing
+     * block, which is why {@code testHalfFloatFlatIndex_forceMerge} cannot catch this.
+     */
+    @SneakyThrows
+    public void testMergeWithIndexSort_preservesDocToVectorMapping() {
+        final int docsPerSegment = 5;
+        final int numSegments = 3;
+        final int totalDocs = docsPerSegment * numSegments;
+        final String sortFieldName = "sort_key";
+        final String idFieldName = "id";
+
+        try (Directory dir = new MMapDirectory(createTempDir())) {
+            final Codec codec = new Lucene104Codec() {
+                @Override
+                public KnnVectorsFormat getKnnVectorsFormatForField(String field) {
+                    return new KNN1040HalfFloatFlatVectorsFormat();
+                }
+            };
+
+            final IndexWriterConfig iwc = new IndexWriterConfig().setCodec(codec)
+                .setIndexSort(new Sort(new SortField(sortFieldName, SortField.Type.LONG, true)));
+
+            final float[][] vectors = generateVectors(totalDocs, DIMENSION);
+
+            try (IndexWriter writer = new IndexWriter(dir, iwc)) {
+                for (int i = 0; i < totalDocs; i++) {
+                    Document doc = new Document();
+                    doc.add(new KnnFloatVectorField(FIELD_NAME, vectors[i], VectorSimilarityFunction.EUCLIDEAN));
+                    doc.add(new NumericDocValuesField(sortFieldName, i));
+                    doc.add(new StoredField(idFieldName, i));
+                    writer.addDocument(doc);
+                    if ((i + 1) % docsPerSegment == 0) {
+                        writer.commit();
+                    }
+                }
+                writer.forceMerge(1);
+            }
+
+            try (DirectoryReader reader = DirectoryReader.open(dir)) {
+                assertEquals("force merge should leave a single segment", 1, reader.leaves().size());
+                LeafReader leaf = reader.leaves().get(0).reader();
+
+                FloatVectorValues values = leaf.getFloatVectorValues(FIELD_NAME);
+                assertNotNull(values);
+                assertEquals(totalDocs, values.size());
+
+                int seen = 0;
+                int previousId = Integer.MAX_VALUE;
+                KnnVectorValues.DocIndexIterator iterator = values.iterator();
+                for (int doc = iterator.nextDoc(); doc != DocIdSetIterator.NO_MORE_DOCS; doc = iterator.nextDoc()) {
+                    int id = leaf.storedFields().document(doc).getField(idFieldName).numericValue().intValue();
+
+                    // Descending sort on an ascending key: ids must come back in descending order,
+                    // which is what proves the segments actually interleaved during the merge.
+                    assertTrue("docs should be in descending id order, got " + id + " after " + previousId, id < previousId);
+                    previousId = id;
+
+                    float[] actual = values.vectorValue(iterator.index());
+                    for (int d = 0; d < DIMENSION; d++) {
+                        float expected = Float.float16ToFloat(Float.floatToFloat16(vectors[id][d]));
+                        assertEquals("vector mismatch for id=" + id + " dim=" + d, expected, actual[d], 0.0f);
+                    }
+                    seen++;
+                }
+                assertEquals(totalDocs, seen);
             }
         }
     }
