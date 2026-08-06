@@ -48,6 +48,7 @@ import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.MMapDirectory;
 import org.apache.lucene.util.InfoStream;
 import org.apache.lucene.util.StringHelper;
+import org.apache.lucene.util.VectorUtil;
 import org.apache.lucene.util.Version;
 import org.apache.lucene.util.hnsw.RandomVectorScorer;
 import org.opensearch.knn.KNNTestCase;
@@ -451,15 +452,20 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
 
     @SneakyThrows
     public void testSearch_cosineWithMmapDirectory_doesNotThrowAndMatchesExpected() {
-        // Regression test for the original crash: COSINE has no native SIMD type
-        // (NativeEngines990KnnVectorsScorer#getNativeFunctionType returns null for it), so with mmap
-        // available this used to fall through to Lucene's own delegate scorer, which detects
+        // Regression test for the original crash: COSINE used to have no native SIMD type
+        // (NativeEngines990KnnVectorsScorer#getNativeFunctionType returned null for it), so with mmap
+        // available this fell through to Lucene's own delegate scorer, which detects
         // HasIndexSlice on KNN1040HalfFloatFlatVectorsValues and reads the slice assuming 4 bytes/dimension
         // (float32) instead of this format's 2 bytes/dimension (FP16) -- overreading past the
-        // buffer on the tail vectors and throwing IndexOutOfBoundsException. This is the deterministic
-        // trigger: COSINE always takes this path regardless of whether mmap extraction succeeds.
+        // buffer on the tail vectors and throwing IndexOutOfBoundsException.
+        //
+        // COSINE now maps to the native FP16_COSINE kernel, so the delegate is no longer reached at all.
+        // That kernel scores (1 + dot) / 2 clamped to [0, 1], which equals cosine only for unit-length
+        // vectors. In the real indexing path LuceneFlatMethod normalizes on write and
+        // KNNVectorFieldType#transformQueryVector normalizes the query; this test drives the codec
+        // directly, below the mapper, so it has to satisfy that contract itself.
         try (MMapDirectory dir = new MMapDirectory(createTempDir())) {
-            float[][] vectors = generateVectors(NUM_VECTORS, DIMENSION);
+            float[][] vectors = normalizeAll(generateVectors(NUM_VECTORS, DIMENSION));
             SegmentReadState readState = writeVectors(dir, vectors, VectorSimilarityFunction.COSINE);
 
             try (FlatVectorsReader reader = new KNN1040HalfFloatFlatVectorsFormat().fieldsReader(readState)) {
@@ -468,7 +474,7 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
                     reader.getFloatVectorValues(FIELD_NAME) instanceof MMapFloatVectorValues
                 );
 
-                float[] query = generateVectors(1, DIMENSION)[0];
+                float[] query = VectorUtil.l2normalize(generateVectors(1, DIMENSION)[0]);
                 KnnCollector collector = new TopKnnCollector(NUM_VECTORS, Integer.MAX_VALUE);
                 reader.search(FIELD_NAME, query, collector, AcceptDocs.fromLiveDocs(null, NUM_VECTORS));
 
@@ -609,6 +615,18 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
             best = Math.max(best, similarity.compare(query, decoded));
         }
         return best;
+    }
+
+    /**
+     * L2-normalizes every vector in place and returns the same array. Mirrors what
+     * {@code LuceneFlatMethod}'s transformer does on write for {@code half_float} + cosine, which tests
+     * driving the codec directly have to reproduce themselves.
+     */
+    private float[][] normalizeAll(float[][] vectors) {
+        for (float[] vector : vectors) {
+            VectorUtil.l2normalize(vector);
+        }
+        return vectors;
     }
 
     private float[][] generateVectors(int count, int dimension) {
