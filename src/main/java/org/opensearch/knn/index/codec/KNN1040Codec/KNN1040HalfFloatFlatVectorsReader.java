@@ -11,20 +11,28 @@ import org.apache.lucene.codecs.hnsw.FlatVectorsReader;
 import org.apache.lucene.codecs.hnsw.FlatVectorsScorer;
 import org.apache.lucene.codecs.lucene95.OrdToDocDISIReaderConfiguration;
 import org.apache.lucene.index.ByteVectorValues;
+import org.apache.lucene.index.CorruptIndexException;
 import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.FieldInfos;
 import org.apache.lucene.index.FloatVectorValues;
 import org.apache.lucene.index.IndexFileNames;
 import org.apache.lucene.index.SegmentReadState;
+import org.apache.lucene.index.VectorEncoding;
 import org.apache.lucene.index.VectorSimilarityFunction;
 import org.apache.lucene.search.AcceptDocs;
 import org.apache.lucene.search.KnnCollector;
+import org.apache.lucene.internal.hppc.IntObjectHashMap;
 import org.apache.lucene.store.ChecksumIndexInput;
 import org.apache.lucene.store.DataAccessHint;
+import org.apache.lucene.store.DataInput;
+import org.apache.lucene.store.FileDataHint;
+import org.apache.lucene.store.FileTypeHint;
+import org.apache.lucene.store.IOContext.FileOpenHint;
 import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.util.Bits;
 import org.apache.lucene.util.IOUtils;
+import org.apache.lucene.util.RamUsageEstimator;
 import org.apache.lucene.util.hnsw.RandomVectorScorer;
 import org.apache.lucene.util.packed.DirectMonotonicReader;
 import org.opensearch.knn.index.codec.scorer.NativeEngines990KnnVectorsScorer;
@@ -33,8 +41,10 @@ import org.opensearch.knn.memoryoptsearch.MemorySegmentAddressExtractorUtil;
 import org.opensearch.knn.memoryoptsearch.faiss.MMapFloatVectorValues;
 
 import java.io.IOException;
-import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Stream;
 
 import static org.opensearch.knn.index.codec.KNN1040Codec.KNN1040HalfFloatFlatVectorsFormat.META_CODEC_NAME;
 import static org.opensearch.knn.index.codec.KNN1040Codec.KNN1040HalfFloatFlatVectorsFormat.META_EXTENSION;
@@ -44,65 +54,91 @@ import static org.opensearch.knn.index.codec.KNN1040Codec.KNN1040HalfFloatFlatVe
 import static org.opensearch.knn.index.codec.KNN1040Codec.KNN1040HalfFloatFlatVectorsFormat.VERSION_START;
 
 /**
- * Reader for half-precision (FP16) flat vector fields.
+ * Reader for half-precision (FP16) flat vector fields, reading vectors from {@code .vec} and
+ * per-field metadata from {@code .vemf}.
  *
- * <p>On segment open, this reader:
- * <ol>
- *   <li>Reads per-field metadata from the {@code .vemf} file (dimension, offset, length, ord-to-doc)</li>
- *   <li>Opens the {@code .vec} data file and creates per-field slices</li>
- *   <li>Attempts mmap address extraction for native SIMD scoring</li>
- * </ol>
- *
- * <p>When mmap is available and the similarity function has a native SIMD type (L2, MAX_IP), scoring
- * goes through {@code NativeEngines990KnnVectorsScorer} → {@code NativeRandomVectorScorer}. Otherwise
- * (mmap unavailable, or COSINE, which has no native SIMD type today), scoring uses
- * {@link KNN1040HalfFloatFlatVectorsValues#newFallbackScorer}, which either runs native SIMD on raw
- * bytes read through the {@code IndexInput} slice, or decodes FP16 to float32 and compares directly.
- * Both fallback paths deliberately avoid Lucene's own flat vector scorer factory, which would
- * otherwise detect {@code HasIndexSlice} on {@link KNN1040HalfFloatFlatVectorsValues} and read the
- * slice assuming 4 bytes/dimension (float32) -- silently overreading past the buffer on this
- * 2 bytes/dimension data.
+ * <p>With mmap and a native SIMD type, scoring goes through {@code NativeEngines990KnnVectorsScorer}
+ * → {@code NativeRandomVectorScorer}; otherwise {@link KNN1040HalfFloatFlatVectorsValues#newFallbackScorer}.
+ * Neither fallback may reach Lucene's flat scorer factory, which would read the
+ * {@code HasIndexSlice} slice as 4 bytes/dimension and overrun this 2 bytes/dimension data.
  */
 @Log4j2
 public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
 
+    // Lucene99FlatVectorsReader measures its Format class here; that looks like a slip, so measure
+    // the reader instead.
+    private static final long SHALLOW_SIZE = RamUsageEstimator.shallowSizeOfInstance(KNN1040HalfFloatFlatVectorsReader.class);
+
     private static final int BULK_SCORE_BATCH_SIZE = 64;
     private static final String VECTOR_VALUES_SLICE = "KNN1040HalfFloatFlatVectorsValuesSlice";
 
-    private final Map<String, FieldEntry> fields = new HashMap<>();
+    private final IntObjectHashMap<FieldEntry> fields = new IntObjectHashMap<>();
     private final IndexInput vectorData;
     private final FieldInfos fieldInfos;
     private final FlatVectorsScorer scorer;
     private final IOContext dataContext;
 
     public KNN1040HalfFloatFlatVectorsReader(SegmentReadState state, FlatVectorsScorer scorer) throws IOException {
+        this(state, scorer, DataAccessHint.RANDOM);
+    }
+
+    /**
+     * @param accessHint how this segment's vectors will be read, or {@code null} for no hint.
+     *     Defaults to {@link DataAccessHint#RANDOM}, matching {@code Lucene99FlatVectorsReader}.
+     */
+    public KNN1040HalfFloatFlatVectorsReader(SegmentReadState state, FlatVectorsScorer scorer, DataAccessHint accessHint)
+        throws IOException {
         super();
         this.scorer = scorer;
         this.fieldInfos = state.fieldInfos;
-        this.dataContext = state.context;
+        final FileOpenHint[] hints = Stream.of(FileTypeHint.DATA, FileDataHint.KNN_VECTORS, accessHint)
+            .filter(Objects::nonNull)
+            .toArray(FileOpenHint[]::new);
+        this.dataContext = state.context.withHints(hints);
 
         boolean success = false;
         try {
             int versionMeta = readMetadata(state);
+            vectorData = openDataInput(state, versionMeta, VECTOR_DATA_EXTENSION, VECTOR_DATA_CODEC_NAME, dataContext);
+            success = true;
+        } finally {
+            if (!success) {
+                IOUtils.closeWhileHandlingException(this);
+            }
+        }
+    }
 
-            String vectorDataFileName = IndexFileNames.segmentFileName(state.segmentInfo.name, state.segmentSuffix, VECTOR_DATA_EXTENSION);
-            vectorData = state.directory.openInput(vectorDataFileName, dataContext);
-            int versionData = CodecUtil.checkIndexHeader(
-                vectorData,
-                VECTOR_DATA_CODEC_NAME,
+    private static IndexInput openDataInput(
+        SegmentReadState state,
+        int versionMeta,
+        String fileExtension,
+        String codecName,
+        IOContext context
+    ) throws IOException {
+        String fileName = IndexFileNames.segmentFileName(state.segmentInfo.name, state.segmentSuffix, fileExtension);
+        IndexInput in = state.directory.openInput(fileName, context);
+        boolean success = false;
+        try {
+            int versionVectorData = CodecUtil.checkIndexHeader(
+                in,
+                codecName,
                 VERSION_START,
                 VERSION_CURRENT,
                 state.segmentInfo.getId(),
                 state.segmentSuffix
             );
-            if (versionMeta != versionData) {
-                throw new IOException("Version mismatch: meta=" + versionMeta + " data=" + versionData);
+            if (versionMeta != versionVectorData) {
+                throw new CorruptIndexException(
+                    "Format versions mismatch: meta=" + versionMeta + ", " + codecName + "=" + versionVectorData,
+                    in
+                );
             }
-            CodecUtil.retrieveChecksum(vectorData);
+            CodecUtil.retrieveChecksum(in);
             success = true;
+            return in;
         } finally {
-            if (!success) {
-                IOUtils.closeWhileHandlingException(this);
+            if (success == false) {
+                IOUtils.closeWhileHandlingException(in);
             }
         }
     }
@@ -136,17 +172,54 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
         for (int fieldNumber = meta.readInt(); fieldNumber != -1; fieldNumber = meta.readInt()) {
             FieldInfo info = fieldInfos.fieldInfo(fieldNumber);
             if (info == null) {
-                throw new IOException("Invalid field number: " + fieldNumber);
+                throw new CorruptIndexException("Invalid field number: " + fieldNumber, meta);
             }
-            VectorSimilarityFunction similarity = VectorSimilarityFunction.values()[meta.readInt()];
-            long vectorDataOffset = meta.readVLong();
-            long vectorDataLength = meta.readVLong();
-            int dimension = meta.readVInt();
-            int size = meta.readInt();
-            OrdToDocDISIReaderConfiguration ordToDoc = OrdToDocDISIReaderConfiguration.fromStoredMeta(meta, size);
-
-            fields.put(info.name, new FieldEntry(similarity, vectorDataOffset, vectorDataLength, dimension, size, ordToDoc));
+            fields.put(info.number, FieldEntry.create(meta, info));
         }
+    }
+
+    // Order must match Lucene94FieldInfosFormat#SIMILARITY_FUNCTIONS; listed explicitly so the
+    // on-disk ordinal does not depend on VectorSimilarityFunction's declaration order.
+    private static final List<VectorSimilarityFunction> SIMILARITY_FUNCTIONS = List.of(
+        VectorSimilarityFunction.EUCLIDEAN,
+        VectorSimilarityFunction.DOT_PRODUCT,
+        VectorSimilarityFunction.COSINE,
+        VectorSimilarityFunction.MAXIMUM_INNER_PRODUCT
+    );
+
+    private static VectorSimilarityFunction readSimilarityFunction(DataInput input) throws IOException {
+        int i = input.readInt();
+        if (i < 0 || i >= SIMILARITY_FUNCTIONS.size()) {
+            throw new IllegalArgumentException("invalid distance function: " + i);
+        }
+        return SIMILARITY_FUNCTIONS.get(i);
+    }
+
+    private static VectorEncoding readVectorEncoding(DataInput input) throws IOException {
+        int encodingId = input.readInt();
+        if (encodingId < 0 || encodingId >= VectorEncoding.values().length) {
+            throw new CorruptIndexException("Invalid vector encoding id: " + encodingId, input);
+        }
+        return VectorEncoding.values()[encodingId];
+    }
+
+    private FieldEntry getFieldEntryOrThrow(String field) {
+        final FieldInfo info = fieldInfos.fieldInfo(field);
+        final FieldEntry entry;
+        if (info == null || (entry = fields.get(info.number)) == null) {
+            throw new IllegalArgumentException("field=\"" + field + "\" not found");
+        }
+        return entry;
+    }
+
+    private FieldEntry getFieldEntry(String field, VectorEncoding expectedEncoding) {
+        final FieldEntry fieldEntry = getFieldEntryOrThrow(field);
+        if (fieldEntry.vectorEncoding != expectedEncoding) {
+            throw new IllegalArgumentException(
+                "field=\"" + field + "\" is encoded as: " + fieldEntry.vectorEncoding + " expected: " + expectedEncoding
+            );
+        }
+        return fieldEntry;
     }
 
     /**
@@ -161,10 +234,7 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
 
     @Override
     public FloatVectorValues getFloatVectorValues(String field) throws IOException {
-        FieldEntry entry = fields.get(field);
-        if (entry == null) {
-            return null;
-        }
+        final FieldEntry entry = getFieldEntry(field, VectorEncoding.FLOAT32);
         KNN1040HalfFloatFlatVectorsValues base = newVectorValues(entry);
         long[] addressAndSize = MemorySegmentAddressExtractorUtil.tryExtractAddressAndSize(base.getSlice(), 0, base.getSlice().length());
         return addressAndSize != null ? new MMapFloatVectorValues(base, addressAndSize) : base;
@@ -172,11 +242,9 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
 
     @Override
     public RandomVectorScorer getRandomVectorScorer(String field, float[] target) throws IOException {
-        FieldEntry entry = fields.get(field);
-        if (entry == null) {
-            return null;
-        }
+        final FieldEntry entry = getFieldEntry(field, VectorEncoding.FLOAT32);
         KNN1040HalfFloatFlatVectorsValues base = newVectorValues(entry);
+        // Empty segment: search() relies on a null scorer to mean "nothing to collect".
         if (base.size() == 0) {
             return null;
         }
@@ -186,25 +254,17 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
             entry.similarity
         );
         if (addressAndSize != null && nativeType != null) {
-            // Only route through the shared scorer chain (and thus, potentially, Lucene's delegate)
-            // once mmap succeeded AND a native SIMD type exists. That chain builds
-            // NativeRandomVectorScorer directly in this case and never reaches Lucene's delegate.
+            // Safe only with both mmap and a native type: the chain then builds
+            // NativeRandomVectorScorer directly and never reaches Lucene's delegate.
             MMapFloatVectorValues mmapValues = new MMapFloatVectorValues(base, addressAndSize);
             return scorer.getRandomVectorScorer(entry.similarity, mmapValues, target);
         }
-        // mmap unavailable, or no native SIMD type for this similarity function (COSINE today):
-        // never hand `base` to the shared scorer chain here -- it would fall through to Lucene's
-        // delegate, which reads KNN1040HalfFloatFlatVectorsValues' HasIndexSlice-exposed slice
-        // assuming float32, corrupting scores and eventually reading past the buffer on tail vectors.
+        // Never hand `base` to the shared chain: Lucene's delegate would read its HasIndexSlice
+        // slice as float32 and overrun this FP16 data.
         return KNN1040HalfFloatFlatVectorsValues.newFallbackScorer(base, target, entry.similarity);
     }
 
-    /**
-     * Exhaustive brute-force search over all FP16 vectors. Gets a scorer (native SIMD when mmap and
-     * a native type are both available, otherwise a fallback scorer -- see
-     * {@link #getRandomVectorScorer(String, float[])}), then iterates all ords in batches, collecting
-     * into knnCollector.
-     */
+    /** Exhaustive brute-force search over all FP16 vectors, scoring ords in batches. */
     @Override
     public void search(String field, float[] target, KnnCollector knnCollector, AcceptDocs acceptDocs) throws IOException {
         RandomVectorScorer randomScorer = getRandomVectorScorer(field, target);
@@ -278,7 +338,19 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
 
     @Override
     public long ramBytesUsed() {
-        return 0;
+        return KNN1040HalfFloatFlatVectorsReader.SHALLOW_SIZE + fields.ramBytesUsed();
+    }
+
+    @Override
+    public Map<String, Long> getOffHeapByteSize(FieldInfo fieldInfo) {
+        final FieldEntry entry = getFieldEntryOrThrow(fieldInfo.name);
+        return Map.of(VECTOR_DATA_EXTENSION, entry.vectorDataLength());
+    }
+
+    @Override
+    public void finishMerge() throws IOException {
+        // Revert the sequential access hint applied by getMergeInstance().
+        vectorData.updateIOContext(dataContext);
     }
 
     @Override
@@ -286,11 +358,32 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
         IOUtils.close(vectorData);
     }
 
-    private record FieldEntry(VectorSimilarityFunction similarity, long vectorDataOffset, long vectorDataLength, int dimension, int size,
-        OrdToDocDISIReaderConfiguration ordToDoc) {
+    private record FieldEntry(VectorSimilarityFunction similarity, VectorEncoding vectorEncoding, long vectorDataOffset,
+        long vectorDataLength, int dimension, int size, OrdToDocDISIReaderConfiguration ordToDoc, FieldInfo info) {
+
         FieldEntry {
-            long expectedBytes = (long) size * dimension * Short.BYTES;
-            if (expectedBytes != vectorDataLength) {
+            if (similarity != info.getVectorSimilarityFunction()) {
+                throw new IllegalStateException(
+                    "Inconsistent vector similarity function for field=\""
+                        + info.name
+                        + "\"; "
+                        + similarity
+                        + " != "
+                        + info.getVectorSimilarityFunction()
+                );
+            }
+            int infoVectorDimension = info.getVectorDimension();
+            if (infoVectorDimension != dimension) {
+                throw new IllegalStateException(
+                    "Inconsistent vector dimension for field=\"" + info.name + "\"; " + infoVectorDimension + " != " + dimension
+                );
+            }
+
+            // FP16: 2 bytes per dimension, where Lucene's flat format uses encoding.byteSize.
+            final int byteSize = Short.BYTES;
+            long vectorBytes = Math.multiplyExact((long) infoVectorDimension, byteSize);
+            long numBytes = Math.multiplyExact(vectorBytes, size);
+            if (numBytes != vectorDataLength) {
                 throw new IllegalStateException(
                     "Vector data length "
                         + vectorDataLength
@@ -299,11 +392,22 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
                         + " * dim="
                         + dimension
                         + " * byteSize="
-                        + Short.BYTES
+                        + byteSize
                         + " = "
-                        + expectedBytes
+                        + numBytes
                 );
             }
+        }
+
+        static FieldEntry create(IndexInput input, FieldInfo info) throws IOException {
+            final VectorEncoding vectorEncoding = readVectorEncoding(input);
+            final VectorSimilarityFunction similarityFunction = readSimilarityFunction(input);
+            final var vectorDataOffset = input.readVLong();
+            final var vectorDataLength = input.readVLong();
+            final var dimension = input.readVInt();
+            final var size = input.readInt();
+            final var ordToDoc = OrdToDocDISIReaderConfiguration.fromStoredMeta(input, size);
+            return new FieldEntry(similarityFunction, vectorEncoding, vectorDataOffset, vectorDataLength, dimension, size, ordToDoc, info);
         }
     }
 }

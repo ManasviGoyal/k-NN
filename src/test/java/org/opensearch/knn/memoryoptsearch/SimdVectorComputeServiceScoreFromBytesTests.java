@@ -16,7 +16,11 @@ import java.util.concurrent.ThreadLocalRandom;
 public class SimdVectorComputeServiceScoreFromBytesTests extends KNNTestCase {
     @Test
     public void maxIP_singleVector() {
-        doScoreFromBytesTest(SimdVectorComputeService.SimilarityFunctionType.FP16_MAXIMUM_INNER_PRODUCT, KNNVectorSimilarityFunction.MAXIMUM_INNER_PRODUCT, 1);
+        doScoreFromBytesTest(
+            SimdVectorComputeService.SimilarityFunctionType.FP16_MAXIMUM_INNER_PRODUCT,
+            KNNVectorSimilarityFunction.MAXIMUM_INNER_PRODUCT,
+            1
+        );
     }
 
     @Test
@@ -26,7 +30,11 @@ public class SimdVectorComputeServiceScoreFromBytesTests extends KNNTestCase {
 
     @Test
     public void maxIP_bulk() {
-        doScoreFromBytesTest(SimdVectorComputeService.SimilarityFunctionType.FP16_MAXIMUM_INNER_PRODUCT, KNNVectorSimilarityFunction.MAXIMUM_INNER_PRODUCT, 37);
+        doScoreFromBytesTest(
+            SimdVectorComputeService.SimilarityFunctionType.FP16_MAXIMUM_INNER_PRODUCT,
+            KNNVectorSimilarityFunction.MAXIMUM_INNER_PRODUCT,
+            37
+        );
     }
 
     @Test

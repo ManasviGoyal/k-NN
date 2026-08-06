@@ -15,12 +15,11 @@ import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.util.hnsw.RandomVectorScorer;
 import org.apache.lucene.util.packed.DirectMonotonicReader;
 import org.opensearch.knn.index.codec.scorer.NativeEngines990KnnVectorsScorer;
+import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
 import org.opensearch.knn.jni.SimdFp16;
 import org.opensearch.knn.jni.SimdVectorComputeService;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 
 /**
  * Decodes FP16 (2 bytes/dimension) vector bytes to {@code float[]} on access.
@@ -39,6 +38,7 @@ class KNN1040HalfFloatFlatVectorsValues extends FloatVectorValues implements Has
     private final IndexInput slice;
     private final int byteSize;
     private final float[] value;
+    private final byte[] rawBytes;
     private final DirectMonotonicReader ordToDocReader;
     private final FlatVectorsScorer flatVectorsScorer;
     private final VectorSimilarityFunction similarity;
@@ -57,6 +57,7 @@ class KNN1040HalfFloatFlatVectorsValues extends FloatVectorValues implements Has
         this.slice = slice;
         this.byteSize = dimension * Short.BYTES;
         this.value = new float[dimension];
+        this.rawBytes = new byte[byteSize];
         this.ordToDocReader = ordToDocReader;
         this.flatVectorsScorer = flatVectorsScorer;
         this.similarity = similarity;
@@ -98,12 +99,8 @@ class KNN1040HalfFloatFlatVectorsValues extends FloatVectorValues implements Has
             return value;
         }
         lastOrd = ord;
-        byte[] raw = new byte[byteSize];
-        readRawVectorBytes(ord, raw, 0);
-        ByteBuffer buf = ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN);
-        for (int i = 0; i < dimension; i++) {
-            value[i] = Float.float16ToFloat(buf.getShort());
-        }
+        readRawVectorBytes(ord, rawBytes, 0);
+        KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.byteToFloatArray(rawBytes, value, dimension, 0);
         return value;
     }
 
