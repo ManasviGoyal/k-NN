@@ -20,14 +20,14 @@ import java.io.IOException;
  * is valid only within a single call, so the save cannot be hoisted. Prefer {@link #bulkScore},
  * which amortizes the setup across a batch; {@link #score(int)} pays it for one vector.
  */
-class KNN1040HalfFloatFlatVectorsScorer extends RandomVectorScorer.AbstractRandomVectorScorer {
+class KNN1040HalfFloatRandomVectorScorer extends RandomVectorScorer.AbstractRandomVectorScorer {
     private final KNN1040HalfFloatFlatVectorsValues values;
     private final float[] target;
     private final int nativeFunctionTypeOrd;
     private byte[] vectorBytesBuffer;
     private final float[] singleScoreBuffer = new float[1];
 
-    KNN1040HalfFloatFlatVectorsScorer(
+    KNN1040HalfFloatRandomVectorScorer(
         KNN1040HalfFloatFlatVectorsValues values,
         float[] target,
         SimdVectorComputeService.SimilarityFunctionType nativeFunctionType
