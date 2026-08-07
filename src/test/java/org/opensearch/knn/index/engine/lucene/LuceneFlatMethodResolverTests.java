@@ -208,6 +208,48 @@ public class LuceneFlatMethodResolverTests extends KNNTestCase {
         assertEquals(CompressionLevel.x32, floatContext.getCompressionLevel());
     }
 
+    /** The value HALF_FLOAT defaults to must also be accepted when set explicitly. */
+    public void testResolveMethod_whenFlatMethodWithHalfFloatAndExplicitX2_thenResolve() {
+        KNNMethodContext flatMethodContext = new KNNMethodContext(
+            KNNEngine.LUCENE,
+            SpaceType.L2,
+            new MethodComponentContext(METHOD_FLAT, Map.of())
+        );
+        ResolvedMethodContext resolvedMethodContext = TEST_RESOLVER.resolveMethod(
+            flatMethodContext,
+            KNNMethodConfigContext.builder()
+                .vectorDataType(VectorDataType.HALF_FLOAT)
+                .compressionLevel(CompressionLevel.x2)
+                .versionCreated(Version.CURRENT)
+                .build(),
+            false,
+            SpaceType.L2
+        );
+        assertEquals(CompressionLevel.x2, resolvedMethodContext.getCompressionLevel());
+    }
+
+    /** x32 must stay rejected for HALF_FLOAT even when set explicitly, not just by default. */
+    public void testResolveMethod_whenFlatMethodWithHalfFloatAndExplicitX32_thenThrow() {
+        KNNMethodContext flatMethodContext = new KNNMethodContext(
+            KNNEngine.LUCENE,
+            SpaceType.L2,
+            new MethodComponentContext(METHOD_FLAT, Map.of())
+        );
+        expectThrows(
+            ValidationException.class,
+            () -> TEST_RESOLVER.resolveMethod(
+                flatMethodContext,
+                KNNMethodConfigContext.builder()
+                    .vectorDataType(VectorDataType.HALF_FLOAT)
+                    .compressionLevel(CompressionLevel.x32)
+                    .versionCreated(Version.CURRENT)
+                    .build(),
+                false,
+                SpaceType.L2
+            )
+        );
+    }
+
     public void testResolveMethod_whenFlatMethodWithHalfFloatAndInnerProduct_thenResolve() {
         KNNMethodContext flatMethodContext = new KNNMethodContext(
             KNNEngine.LUCENE,

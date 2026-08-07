@@ -18,7 +18,6 @@ import org.opensearch.knn.index.mapper.Mode;
 
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 
 import static org.opensearch.knn.common.KNNConstants.METHOD_FLAT;
 import static org.opensearch.knn.common.KNNConstants.MODE_PARAMETER;
@@ -32,8 +31,8 @@ import static org.opensearch.knn.index.engine.lucene.LuceneFlatMethod.FLAT_METHO
  */
 public class LuceneFlatMethodResolver extends AbstractMethodResolver {
 
-    static final Set<CompressionLevel> SUPPORTED_COMPRESSION_LEVELS = Set.of(CompressionLevel.x32);
     static final CompressionLevel DEFAULT_COMPRESSION = CompressionLevel.x32;
+    static final CompressionLevel DEFAULT_COMPRESSION_HALF_FLOAT = CompressionLevel.x2;
 
     @Override
     public ResolvedMethodContext resolveMethod(
@@ -89,22 +88,22 @@ public class LuceneFlatMethodResolver extends AbstractMethodResolver {
     }
 
     private CompressionLevel validateAndResolveCompressionLevel(KNNMethodConfigContext knnMethodConfigContext) {
+        // HALF_FLOAT isn't SQ, so it gets its own default instead of x32's rescore-triggering one.
+        final CompressionLevel defaultCompression = VectorDataType.HALF_FLOAT == knnMethodConfigContext.getVectorDataType()
+            ? DEFAULT_COMPRESSION_HALF_FLOAT
+            : DEFAULT_COMPRESSION;
+
         CompressionLevel compressionLevel = knnMethodConfigContext.getCompressionLevel();
         if (CompressionLevel.isConfigured(compressionLevel)) {
-            if (!SUPPORTED_COMPRESSION_LEVELS.contains(compressionLevel)) {
+            if (compressionLevel != defaultCompression) {
                 ValidationException validationException = new ValidationException();
                 validationException.addValidationError(
-                    String.format(Locale.ROOT, "\"%s\" method only supports \"%s\" compression", METHOD_FLAT, DEFAULT_COMPRESSION.getName())
+                    String.format(Locale.ROOT, "\"%s\" method only supports \"%s\" compression", METHOD_FLAT, defaultCompression.getName())
                 );
                 throw validationException;
             }
             return compressionLevel;
         }
-        // HALF_FLOAT does not go through SQ, so the x32 default would misreport its footprint and
-        // would switch on a rescore pass that cannot change an exhaustive FP16 search's ranking.
-        if (VectorDataType.HALF_FLOAT == knnMethodConfigContext.getVectorDataType()) {
-            return CompressionLevel.x2;
-        }
-        return DEFAULT_COMPRESSION;
+        return defaultCompression;
     }
 }
