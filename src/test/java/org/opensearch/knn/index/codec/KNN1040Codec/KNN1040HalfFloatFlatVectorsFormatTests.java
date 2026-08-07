@@ -53,6 +53,7 @@ import org.apache.lucene.util.Version;
 import org.apache.lucene.util.hnsw.RandomVectorScorer;
 import org.opensearch.knn.KNNTestCase;
 import org.opensearch.knn.index.engine.KNNEngine;
+import org.opensearch.knn.jni.SimdFp16;
 import org.opensearch.knn.memoryoptsearch.faiss.MMapFloatVectorValues;
 
 import org.apache.lucene.index.Sorter;
@@ -526,6 +527,121 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
                 assertEquals(NUM_VECTORS, collector.topDocs().scoreDocs.length);
             }
         }
+    }
+
+    /**
+     * Cosine through the tier-2 byte-copy SIMD scorer.
+     *
+     * <p>{@code ByteBuffersDirectory} exposes no mmap address, so {@code selectScorer} falls through to
+     * {@code selectFallbackScorer}. That method picks tier 2 only when the similarity has a native type.
+     * Cosine used to have none, so it always landed in the tier-3 Java branch -- this combination was
+     * unreachable before FP16_COSINE existed and is therefore not covered by any pre-existing test.</p>
+     *
+     * <p>The {@code instanceof} assertion is the point of the test: without it this would still pass via
+     * the tier-3 Java fallback and prove nothing about the native path.</p>
+     */
+    @SneakyThrows
+    public void testGetRandomVectorScorer_nonMmapDirectoryCosine_usesTier2AndMatchesExpected() {
+        try (Directory dir = new ByteBuffersDirectory()) {
+            float[][] vectors = normalizeAll(generateVectors(NUM_VECTORS, DIMENSION));
+            SegmentReadState readState = writeVectors(dir, vectors, VectorSimilarityFunction.COSINE);
+
+            try (FlatVectorsReader reader = new KNN1040HalfFloatFlatVectorsFormat().fieldsReader(readState)) {
+                assertFalse(
+                    "expected non-mmap-backed values for this test",
+                    reader.getFloatVectorValues(FIELD_NAME) instanceof MMapFloatVectorValues
+                );
+
+                float[] query = VectorUtil.l2normalize(generateVectors(1, DIMENSION)[0]);
+                RandomVectorScorer scorer = reader.getRandomVectorScorer(FIELD_NAME, query);
+                assertNotNull(scorer);
+                if (SimdFp16.isSIMDSupported()) {
+                    assertTrue(
+                        "cosine should reach the tier-2 native scorer, not the tier-3 Java fallback",
+                        scorer instanceof KNN1040HalfFloatRandomVectorScorer
+                    );
+                }
+                assertEquals(NUM_VECTORS, scorer.maxOrd());
+
+                for (int i = 0; i < NUM_VECTORS; i++) {
+                    float expected = VectorSimilarityFunction.COSINE.compare(query, decodeFp16(vectors[i]));
+                    assertEquals("Vector " + i, expected, scorer.score(i), 1e-3);
+                }
+            }
+        }
+    }
+
+    /**
+     * Same tier-2 cosine path reached via {@code values.scorer(target)} rather than the reader, since the
+     * two entry points dispatch independently.
+     */
+    @SneakyThrows
+    public void testScorer_nonMmapDirectoryCosine_matchesExpectedSimilarity() {
+        try (Directory dir = new ByteBuffersDirectory()) {
+            float[][] vectors = normalizeAll(generateVectors(NUM_VECTORS, DIMENSION));
+            SegmentReadState readState = writeVectors(dir, vectors, VectorSimilarityFunction.COSINE);
+
+            try (FlatVectorsReader reader = new KNN1040HalfFloatFlatVectorsFormat().fieldsReader(readState)) {
+                FloatVectorValues values = reader.getFloatVectorValues(FIELD_NAME);
+                assertFalse("expected non-mmap-backed values for this test", values instanceof MMapFloatVectorValues);
+
+                float[] query = VectorUtil.l2normalize(generateVectors(1, DIMENSION)[0]);
+                VectorScorer scorer = values.scorer(query);
+                assertNotNull(scorer);
+
+                for (int i = 0; i < NUM_VECTORS; i++) {
+                    assertTrue(scorer.iterator().nextDoc() != DocIdSetIterator.NO_MORE_DOCS);
+                    float expected = VectorSimilarityFunction.COSINE.compare(query, decodeFp16(vectors[i]));
+                    assertEquals("Vector " + i, expected, scorer.score(), 1e-3);
+                }
+            }
+        }
+    }
+
+    /**
+     * Tier-2 cosine through {@code VectorScorer.bulk()}, which batches every vector into one native call
+     * rather than scoring per ordinal. This is the path the reader's exhaustive search uses.
+     */
+    @SneakyThrows
+    public void testScorerBulk_nonMmapDirectoryCosine_matchesExpectedSimilarity() {
+        try (Directory dir = new ByteBuffersDirectory()) {
+            float[][] vectors = normalizeAll(generateVectors(NUM_VECTORS, DIMENSION));
+            SegmentReadState readState = writeVectors(dir, vectors, VectorSimilarityFunction.COSINE);
+
+            try (FlatVectorsReader reader = new KNN1040HalfFloatFlatVectorsFormat().fieldsReader(readState)) {
+                FloatVectorValues values = reader.getFloatVectorValues(FIELD_NAME);
+                assertFalse("expected non-mmap-backed values for this test", values instanceof MMapFloatVectorValues);
+
+                float[] query = VectorUtil.l2normalize(generateVectors(1, DIMENSION)[0]);
+                VectorScorer scorer = values.scorer(query);
+                assertNotNull(scorer);
+
+                VectorScorer.Bulk bulk = scorer.bulk(null);
+                DocAndFloatFeatureBuffer buffer = new DocAndFloatFeatureBuffer();
+                float maxScore = bulk.nextDocsAndScores(NUM_VECTORS, null, buffer);
+                assertEquals(NUM_VECTORS, buffer.size);
+
+                float expectedMax = Float.NEGATIVE_INFINITY;
+                for (int i = 0; i < NUM_VECTORS; i++) {
+                    float expected = VectorSimilarityFunction.COSINE.compare(query, decodeFp16(vectors[i]));
+                    assertEquals("Vector " + i, expected, buffer.features[i], 1e-3);
+                    expectedMax = Math.max(expectedMax, expected);
+                }
+                assertEquals(expectedMax, maxScore, 1e-3);
+            }
+        }
+    }
+
+    /**
+     * Round-trips a vector through FP16 so expectations are computed against what the format actually
+     * stored, not the pre-quantization input.
+     */
+    private float[] decodeFp16(float[] vector) {
+        float[] decoded = new float[vector.length];
+        for (int d = 0; d < vector.length; d++) {
+            decoded[d] = Float.float16ToFloat(Float.floatToFloat16(vector[d]));
+        }
+        return decoded;
     }
 
     /**
