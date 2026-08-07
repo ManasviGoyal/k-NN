@@ -57,6 +57,10 @@ public abstract class AbstractFaissMethod extends AbstractKNNMethod {
             return PerDimensionValidator.DEFAULT_FLOAT_VALIDATOR;
         }
 
+        if (VectorDataType.HALF_FLOAT == vectorDataType) {
+            return PerDimensionValidator.DEFAULT_HALF_FLOAT_VALIDATOR;
+        }
+
         throw new IllegalStateException("Unsupported vector data type " + vectorDataType);
     }
 
