@@ -175,6 +175,39 @@ public class LuceneFlatMethodResolverTests extends KNNTestCase {
         assertEquals(SpaceType.L2, resolvedMethodContext.getKnnMethodContext().getSpaceType());
     }
 
+    /**
+     * HALF_FLOAT must not inherit the x32 default: it does not go through SQ, and x32 combined with
+     * the flat method switches on a default rescore that cannot change an exhaustive FP16 ranking.
+     */
+    public void testResolveMethod_whenFlatMethodWithHalfFloat_thenCompressionX2AndNoRescore() {
+        KNNMethodContext flatMethodContext = new KNNMethodContext(
+            KNNEngine.LUCENE,
+            SpaceType.L2,
+            new MethodComponentContext(METHOD_FLAT, Map.of())
+        );
+        ResolvedMethodContext resolvedMethodContext = TEST_RESOLVER.resolveMethod(
+            flatMethodContext,
+            KNNMethodConfigContext.builder().vectorDataType(VectorDataType.HALF_FLOAT).versionCreated(Version.CURRENT).build(),
+            false,
+            SpaceType.L2
+        );
+
+        assertEquals(CompressionLevel.x2, resolvedMethodContext.getCompressionLevel());
+        assertNull(
+            "half_float flat must not default to a rescore pass",
+            resolvedMethodContext.getCompressionLevel().getDefaultRescoreContext(Mode.NOT_CONFIGURED, 8, Version.CURRENT, true, false)
+        );
+
+        // FLOAT keeps the existing x32 default and its rescore behaviour.
+        ResolvedMethodContext floatContext = TEST_RESOLVER.resolveMethod(
+            flatMethodContext,
+            KNNMethodConfigContext.builder().vectorDataType(VectorDataType.FLOAT).versionCreated(Version.CURRENT).build(),
+            false,
+            SpaceType.L2
+        );
+        assertEquals(CompressionLevel.x32, floatContext.getCompressionLevel());
+    }
+
     public void testResolveMethod_whenFlatMethodWithHalfFloatAndInnerProduct_thenResolve() {
         KNNMethodContext flatMethodContext = new KNNMethodContext(
             KNNEngine.LUCENE,
