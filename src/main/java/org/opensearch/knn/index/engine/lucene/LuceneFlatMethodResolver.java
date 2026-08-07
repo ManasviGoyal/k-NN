@@ -7,6 +7,7 @@ package org.opensearch.knn.index.engine.lucene;
 
 import org.opensearch.common.ValidationException;
 import org.opensearch.knn.index.SpaceType;
+import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.engine.AbstractMethodResolver;
 import org.opensearch.knn.index.engine.KNNEngine;
 import org.opensearch.knn.index.engine.KNNMethodConfigContext;
@@ -24,9 +25,10 @@ import static org.opensearch.knn.common.KNNConstants.MODE_PARAMETER;
 import static org.opensearch.knn.index.engine.lucene.LuceneFlatMethod.FLAT_METHOD_COMPONENT;
 
 /**
- * Resolves method configuration for the Lucene flat method. The flat method uses SQ (1-bit quantization)
- * without an HNSW graph, supporting only {@link org.opensearch.knn.index.mapper.CompressionLevel#x32} compression
- * and does not support {@link org.opensearch.knn.index.mapper.Mode}.
+ * Resolves method configuration for the Lucene flat method. For FLOAT vectors, the flat method uses SQ
+ * (1-bit quantization) without an HNSW graph, supporting only {@link org.opensearch.knn.index.mapper.CompressionLevel#x32}
+ * compression. HALF_FLOAT vectors do not go through SQ and default to {@link org.opensearch.knn.index.mapper.CompressionLevel#x2},
+ * reflecting their actual on-disk footprint. Neither data type supports {@link org.opensearch.knn.index.mapper.Mode}.
  */
 public class LuceneFlatMethodResolver extends AbstractMethodResolver {
 
@@ -97,6 +99,11 @@ public class LuceneFlatMethodResolver extends AbstractMethodResolver {
                 throw validationException;
             }
             return compressionLevel;
+        }
+        // HALF_FLOAT does not go through SQ, so the x32 default would misreport its footprint and
+        // would switch on a rescore pass that cannot change an exhaustive FP16 search's ranking.
+        if (VectorDataType.HALF_FLOAT == knnMethodConfigContext.getVectorDataType()) {
+            return CompressionLevel.x2;
         }
         return DEFAULT_COMPRESSION;
     }
