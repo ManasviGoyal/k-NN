@@ -331,7 +331,7 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
     @SneakyThrows
     public void testScorerBulk_nonMmapDirectory_matchesExpectedSimilarity() {
         // Exercises VectorScorer.bulk(), which is what the reader's exhaustive search() path uses.
-        // With mmap unavailable, this goes through KNN1040HalfFloatFlatVectorsScorer.bulkScore() when SIMD
+        // With mmap unavailable, this goes through KNN1040HalfFloatRandomVectorScorer.bulkScore() when SIMD
         // is supported, or the pure-Java fallback (via the default Bulk implementation) otherwise.
         try (Directory dir = new ByteBuffersDirectory()) {
             float[][] vectors = generateVectors(NUM_VECTORS, DIMENSION);
@@ -382,6 +382,71 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
                 assertNotNull("getSlice() should return non-null IndexInput for mmap-backed values", hasSlice.getSlice());
             }
         }
+    }
+
+    /**
+     * {@code Values.scorer(target)} used to always fall back to tier 2/3 even when mmap was
+     * available, since it never attempted address extraction the way the reader's
+     * {@code getRandomVectorScorer} did. This proves the shared {@code selectScorer} helper now
+     * selects tier 1 ({@link NativeRandomVectorScorer}) for {@code scorer()} too, matching the
+     * reader's own tier selection -- exercised through {@link MMapFloatVectorValues#scorer}, the
+     * exact path Lucene's filtered exact-search fallback and rescore use.
+     */
+    @SneakyThrows
+    public void testValuesScorer_mmapDirectory_selectsTier1NativeScorer() {
+        try (MMapDirectory dir = new MMapDirectory(createTempDir())) {
+            float[][] vectors = generateVectors(NUM_VECTORS, DIMENSION);
+            SegmentReadState readState = writeVectors(dir, vectors, VectorSimilarityFunction.EUCLIDEAN);
+
+            try (FlatVectorsReader reader = new KNN1040HalfFloatFlatVectorsFormat().fieldsReader(readState)) {
+                FloatVectorValues values = reader.getFloatVectorValues(FIELD_NAME);
+                assertTrue("expected mmap-backed values for this test", values instanceof MMapFloatVectorValues);
+
+                float[] query = generateVectors(1, DIMENSION)[0];
+                VectorScorer vectorScorer = values.scorer(query);
+                assertNotNull(vectorScorer);
+
+                RandomVectorScorer innerScorer = unwrapCapturedScorer(vectorScorer);
+                RandomVectorScorer.AbstractRandomVectorScorer prefetchDelegate = getPrivateField(
+                    innerScorer,
+                    "delegate",
+                    RandomVectorScorer.AbstractRandomVectorScorer.class
+                );
+                assertTrue(
+                    "scorer() should select tier 1 (NativeRandomVectorScorer) when mmap and a native "
+                        + "similarity type are both available, not fall back to tier 2/3",
+                    prefetchDelegate instanceof org.opensearch.knn.memoryoptsearch.faiss.NativeRandomVectorScorer
+                );
+
+                DocIdSetIterator iterator = vectorScorer.iterator();
+                for (int i = 0; i < NUM_VECTORS; i++) {
+                    assertTrue(iterator.nextDoc() != DocIdSetIterator.NO_MORE_DOCS);
+                    float[] decoded = new float[DIMENSION];
+                    for (int d = 0; d < DIMENSION; d++) {
+                        decoded[d] = Float.float16ToFloat(Float.floatToFloat16(vectors[i][d]));
+                    }
+                    float expected = VectorSimilarityFunction.EUCLIDEAN.compare(query, decoded);
+                    assertEquals("Vector " + i, expected, vectorScorer.score(), 1e-3);
+                }
+            }
+        }
+    }
+
+    /**
+     * {@code KNN1040HalfFloatFlatVectorsValues.scorer()} returns an anonymous {@link VectorScorer}
+     * that captures its {@code RandomVectorScorer} in a synthetic field named {@code val$scorer}
+     * (javac's naming for a captured effectively-final local). Unwrapping it this way, rather than
+     * exposing the field on the production type, keeps the test-only concern out of production code.
+     */
+    private static RandomVectorScorer unwrapCapturedScorer(VectorScorer vectorScorer) throws Exception {
+        return getPrivateField(vectorScorer, "val$scorer", RandomVectorScorer.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T getPrivateField(Object target, String fieldName, Class<T> fieldType) throws Exception {
+        java.lang.reflect.Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return (T) field.get(target);
     }
 
     @SneakyThrows

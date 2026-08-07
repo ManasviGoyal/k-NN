@@ -35,8 +35,6 @@ import org.apache.lucene.util.IOUtils;
 import org.apache.lucene.util.RamUsageEstimator;
 import org.apache.lucene.util.hnsw.RandomVectorScorer;
 import org.apache.lucene.util.packed.DirectMonotonicReader;
-import org.opensearch.knn.index.codec.scorer.NativeEngines990KnnVectorsScorer;
-import org.opensearch.knn.jni.SimdVectorComputeService;
 import org.opensearch.knn.memoryoptsearch.MemorySegmentAddressExtractorUtil;
 import org.opensearch.knn.memoryoptsearch.faiss.MMapFloatVectorValues;
 
@@ -58,7 +56,7 @@ import static org.opensearch.knn.index.codec.KNN1040Codec.KNN1040HalfFloatFlatVe
  * per-field metadata from {@code .vemf}.
  *
  * <p>With mmap and a native SIMD type, scoring goes through {@code NativeEngines990KnnVectorsScorer}
- * → {@code NativeRandomVectorScorer}; otherwise {@link KNN1040HalfFloatFlatVectorsValues#newFallbackScorer}.
+ * → {@code NativeRandomVectorScorer}; otherwise {@link KNN1040HalfFloatFlatVectorsValues#selectFallbackScorer}.
  * Neither fallback may reach Lucene's flat scorer factory, which would read the
  * {@code HasIndexSlice} slice as 4 bytes/dimension and overrun this 2 bytes/dimension data.
  */
@@ -248,20 +246,7 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
         if (base.size() == 0) {
             return null;
         }
-
-        long[] addressAndSize = MemorySegmentAddressExtractorUtil.tryExtractAddressAndSize(base.getSlice(), 0, base.getSlice().length());
-        SimdVectorComputeService.SimilarityFunctionType nativeType = NativeEngines990KnnVectorsScorer.getNativeFunctionType(
-            entry.similarity
-        );
-        if (addressAndSize != null && nativeType != null) {
-            // Safe only with both mmap and a native type: the chain then builds
-            // NativeRandomVectorScorer directly and never reaches Lucene's delegate.
-            MMapFloatVectorValues mmapValues = new MMapFloatVectorValues(base, addressAndSize);
-            return scorer.getRandomVectorScorer(entry.similarity, mmapValues, target);
-        }
-        // Never hand `base` to the shared chain: Lucene's delegate would read its HasIndexSlice
-        // slice as float32 and overrun this FP16 data.
-        return KNN1040HalfFloatFlatVectorsValues.newFallbackScorer(base, target, entry.similarity);
+        return KNN1040HalfFloatFlatVectorsValues.selectScorer(base, target, entry.similarity);
     }
 
     /** Exhaustive brute-force search over all FP16 vectors, scoring ords in batches. */
