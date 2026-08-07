@@ -45,6 +45,11 @@ jboolean encodeFp32ToFp16(knn_jni::JNIUtilInterface *jniUtil, JNIEnv* env,
 
     // process 64 elements per iteration (8x unrolled).
     for (; i + 64 <= static_cast<size_t>(count); i += 64) {
+        // One prefetch per 64-element iteration, distance chosen empirically
+        // (fixed 64 floats ahead)
+        if (i + 64 < static_cast<size_t>(count)) {
+            _mm_prefetch(reinterpret_cast<const char*>(&src[i + 64]), _MM_HINT_T0);
+        }
         // _mm256_loadu_ps: load 8 float32 values (unaligned) into a 256-bit
         // vector register (__m256).
         __m256 v0 = _mm256_loadu_ps(&src[i]);

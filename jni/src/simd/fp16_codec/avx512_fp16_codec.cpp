@@ -46,9 +46,9 @@ jboolean encodeFp32ToFp16(knn_jni::JNIUtilInterface *jniUtil, JNIEnv* env,
 
     size_t i = 0;
 
-    // process 128 elements per iteration (8x unrolled)
-    for (; i + 128 <= static_cast<size_t>(count); i += 128) {
-        // One prefetch per 128-element iteration, distance chosen empirically
+    // process 64 elements per iteration (4x unrolled)
+    for (; i + 64 <= static_cast<size_t>(count); i += 64) {
+        // One prefetch per 64-element iteration, distance chosen empirically
         // (fixed 64 floats ahead)
         if (i + 64 < static_cast<size_t>(count)) {
             // _mm_prefetch: hint to fetch the memory at the address into the
@@ -62,10 +62,6 @@ jboolean encodeFp32ToFp16(knn_jni::JNIUtilInterface *jniUtil, JNIEnv* env,
         __m512 v1 = _mm512_loadu_ps(&src[i + 16]);
         __m512 v2 = _mm512_loadu_ps(&src[i + 32]);
         __m512 v3 = _mm512_loadu_ps(&src[i + 48]);
-        __m512 v4 = _mm512_loadu_ps(&src[i + 64]);
-        __m512 v5 = _mm512_loadu_ps(&src[i + 80]);
-        __m512 v6 = _mm512_loadu_ps(&src[i + 96]);
-        __m512 v7 = _mm512_loadu_ps(&src[i + 112]);
         // _mm512_cvtps_ph: convert 16 packed float32 lanes in a __m512 to
         // 16 packed float16 values packed into a 256-bit integer vector
         // The rounding mode flags control how FP32 -> FP16 rounding is performed.
@@ -73,22 +69,14 @@ jboolean encodeFp32ToFp16(knn_jni::JNIUtilInterface *jniUtil, JNIEnv* env,
         __m256i h1 = _mm512_cvtps_ph(v1, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
         __m256i h2 = _mm512_cvtps_ph(v2, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
         __m256i h3 = _mm512_cvtps_ph(v3, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
-        __m256i h4 = _mm512_cvtps_ph(v4, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
-        __m256i h5 = _mm512_cvtps_ph(v5, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
-        __m256i h6 = _mm512_cvtps_ph(v6, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
-        __m256i h7 = _mm512_cvtps_ph(v7, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
         // _mm256_storeu_si256: store a 256-bit vector to memory (unaligned).
         _mm256_storeu_si256(reinterpret_cast<__m256i*>(&dst[i]), h0);
         _mm256_storeu_si256(reinterpret_cast<__m256i*>(&dst[i + 16]), h1);
         _mm256_storeu_si256(reinterpret_cast<__m256i*>(&dst[i + 32]), h2);
         _mm256_storeu_si256(reinterpret_cast<__m256i*>(&dst[i + 48]), h3);
-        _mm256_storeu_si256(reinterpret_cast<__m256i*>(&dst[i + 64]), h4);
-        _mm256_storeu_si256(reinterpret_cast<__m256i*>(&dst[i + 80]), h5);
-        _mm256_storeu_si256(reinterpret_cast<__m256i*>(&dst[i + 96]), h6);
-        _mm256_storeu_si256(reinterpret_cast<__m256i*>(&dst[i + 112]), h7);
     }
 
-    // Masked tail: process the remaining 0-127 elements in up to eight branch-free
+    // Masked tail: process the remaining 0-63 elements in up to four branch-free
     // masked iterations. The mask marks only the lanes that are actually in-bounds
     // for the last, possibly-partial 16-wide chunk; _mm512_maskz_loadu_ps zero-fills
     // the out-of-bounds lanes (safe to convert garbage/zero, since they are never
