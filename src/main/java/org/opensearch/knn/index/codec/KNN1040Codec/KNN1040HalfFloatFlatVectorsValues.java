@@ -152,6 +152,16 @@ class KNN1040HalfFloatFlatVectorsValues extends FloatVectorValues implements Has
     }
 
     /**
+     * Benchmarking toggle: when true, the mmap-backed tier is disabled everywhere -- neither
+     * {@link #selectScorer} nor the reader's {@code getFloatVectorValues} will wrap values in
+     * {@link MMapFloatVectorValues}. Scoring then lands on {@link #selectFallbackScorer}, i.e. the
+     * non-mmap SIMD tier ({@link KNN1040HalfFloatRandomVectorScorer}, raw FP16 bytes passed to
+     * native SIMD) for similarities with a native type, or the Java decode tier otherwise.
+     * Flip to false to restore normal behaviour.
+     */
+    static final boolean FORCE_NON_MMAP = true;
+
+    /**
      * Selects the fastest available scorer for {@code values}: mmap-backed native SIMD
      * when address extraction succeeds and the similarity has a native type, otherwise
      * {@link #selectFallbackScorer}. Shared by both the reader's {@code getRandomVectorScorer} and
@@ -159,6 +169,9 @@ class KNN1040HalfFloatFlatVectorsValues extends FloatVectorValues implements Has
      */
     static RandomVectorScorer selectScorer(KNN1040HalfFloatFlatVectorsValues values, float[] target, VectorSimilarityFunction similarity)
         throws IOException {
+        if (FORCE_NON_MMAP) {
+            return selectFallbackScorer(values, target, similarity);
+        }
         long[] addressAndSize = MemorySegmentAddressExtractorUtil.tryExtractAddressAndSize(
             values.getSlice(),
             0,
