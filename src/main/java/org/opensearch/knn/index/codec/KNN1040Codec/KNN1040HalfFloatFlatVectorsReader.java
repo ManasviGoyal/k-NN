@@ -234,6 +234,10 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
     public FloatVectorValues getFloatVectorValues(String field) throws IOException {
         final FieldEntry entry = getFieldEntry(field, VectorEncoding.FLOAT32);
         KNN1040HalfFloatFlatVectorsValues base = newVectorValues(entry);
+        if (KNN1040HalfFloatFlatVectorsValues.FORCE_NON_MMAP) {
+            // Benchmarking: keep reads on the plain IndexInput slice.
+            return base;
+        }
         long[] addressAndSize = MemorySegmentAddressExtractorUtil.tryExtractAddressAndSize(base.getSlice(), 0, base.getSlice().length());
         return addressAndSize != null ? new MMapFloatVectorValues(base, addressAndSize) : base;
     }
