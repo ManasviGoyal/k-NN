@@ -87,7 +87,7 @@ public class KNNVectorFieldMapperUtil {
      */
     public static StoredField createStoredFieldForHalfFloatVector(String name, float[] vector) {
         byte[] output = new byte[vector.length * 2];
-        KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArrayJava(vector, output, vector.length);
+        KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArray(vector, output, vector.length);
         return new StoredField(name, output);
     }
 
