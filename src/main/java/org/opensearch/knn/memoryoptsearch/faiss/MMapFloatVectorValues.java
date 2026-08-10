@@ -8,6 +8,7 @@ package org.opensearch.knn.memoryoptsearch.faiss;
 import lombok.Getter;
 import org.apache.lucene.codecs.lucene95.HasIndexSlice;
 import org.apache.lucene.index.FloatVectorValues;
+import org.apache.lucene.search.VectorScorer;
 import org.apache.lucene.store.IndexInput;
 
 import java.io.IOException;
@@ -68,6 +69,21 @@ public class MMapFloatVectorValues extends FloatVectorValues implements MMapVect
     @Override
     public int getVectorByteLength() {
         return delegate.getVectorByteLength();
+    }
+
+    @Override
+    public DocIndexIterator iterator() {
+        return delegate.iterator();
+    }
+
+    @Override
+    public int ordToDoc(int ord) {
+        return delegate.ordToDoc(ord);
+    }
+
+    @Override
+    public VectorScorer scorer(float[] target) throws IOException {
+        return delegate.scorer(target);
     }
 
     @Override
