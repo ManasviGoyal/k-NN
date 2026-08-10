@@ -8,9 +8,6 @@ package org.opensearch.knn.jni;
 /**
  * A service that provides SIMD-accelerated FP32-to-FP16 encoding via native code.
  * The appropriate native library variant is selected and loaded based on system CPU capabilities.
- *
- * In order to compile C++ header file, run:
- * javac -h jni/include src/main/java/org/opensearch/knn/jni/SimdFp16.java
  */
 public class SimdFp16 {
 

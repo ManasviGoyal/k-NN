@@ -113,7 +113,7 @@ public class VectorDataTypeTests extends KNNTestCase {
     public void testGetVectorFromBytesRef_whenHalfFloat_thenSuccess() {
         float[] input = new float[] { 10.0f, 25.0f };
         byte[] encoded = new byte[input.length * Short.BYTES];
-        KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArrayJava(input, encoded, input.length);
+        KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.floatToByteArray(input, encoded, input.length);
         BytesRef bytesRef = new BytesRef(encoded);
         float[] result = VectorDataType.HALF_FLOAT.getVectorFromBytesRef(bytesRef);
         assertArrayEquals(input, result, 0.1f);
