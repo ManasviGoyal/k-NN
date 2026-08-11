@@ -26,7 +26,7 @@ import java.io.IOException;
 /**
  * Decodes FP16 (2 bytes/dimension) vector bytes to {@code float[]} on access.
  *
- * <p>Implements {@link HasIndexSlice} so that {@link org.opensearch.knn.memoryoptsearch.faiss.MMapFloatVectorValues}
+ * Implements {@link HasIndexSlice} so that {@link org.opensearch.knn.memoryoptsearch.faiss.MMapFloatVectorValues}
  * can expose the underlying slice for I/O prefetching. Callers must not hand an instance of this
  * class directly to Lucene's own flat vector scorer factory ({@code Lucene99FlatVectorsScorer}):
  * that factory independently detects {@code HasIndexSlice} and reads the raw slice assuming
@@ -107,9 +107,9 @@ class KNN1040HalfFloatFlatVectorsValues extends FloatVectorValues implements Has
     }
 
     /**
-     * Reads the raw (undecoded) FP16 bytes for {@code ord} into {@code dest}, starting at
+     * Reads the raw FP16 bytes for {@code ord} into {@code dest}, starting at
      * {@code destOffset}. Used by {@link KNN1040HalfFloatRandomVectorScorer} to feed native SIMD
-     * scoring without a Java-side FP16-to-float32 decode.
+     * scoring without a Java-side FP16-to-FP32 decode.
      */
     void readRawVectorBytes(int ord, byte[] dest, int destOffset) throws IOException {
         slice.seek((long) ord * byteSize);

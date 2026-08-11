@@ -19,21 +19,9 @@ import org.opensearch.knn.memoryoptsearch.faiss.FlatVectorsScorerProvider;
 import java.io.IOException;
 
 /**
- * A {@link FlatVectorsFormat} wrapper for half-precision (FP16) float vectors that stores each dimension as
- * an IEEE 754 half-float (2 bytes) and uses SIMD-accelerated native scoring during search.
- *
- * <p>This format is designed for exact (brute-force) search over half_float vector fields. Vectors
- * are encoded from FP32 to FP16 at index time and stored in a {@code .vec} file. At search time,
- * the reader overrides {@code search()} to perform an exhaustive batched scan using the native SIMD
- * scorer, which widens FP16 data to FP32 in-register for asymmetric distance computation against
- * the FP32 query vector.
- *
- * <p>The scorer chain is:
- * <pre>
- *   PrefetchableFlatVectorScorer
- *     └─ NativeEngines990KnnVectorsScorer
- *          └─ NativeRandomVectorScorer (SIMD via JNI)
- * </pre>
+ * Custom {@link FlatVectorsFormat} implementation to support half-float vectors. This class is mostly identical to
+ * {@link org.apache.lucene.codecs.lucene99.Lucene99FlatVectorsFormat}, however we use the custom {@link KNN1040HalfFloatFlatVectorsWriter}
+ * and {@link KNN1040HalfFloatFlatVectorsReader} for storage and retrieval of half-float vectors.
  */
 public class KNN1040HalfFloatFlatVectorsFormat extends FlatVectorsFormat {
 

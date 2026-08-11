@@ -55,16 +55,12 @@ import static org.opensearch.knn.index.codec.KNN1040Codec.KNN1040HalfFloatFlatVe
  * Reader for half-precision (FP16) flat vector fields, reading vectors from {@code .vec} and
  * per-field metadata from {@code .vemf}.
  *
- * <p>With mmap and a native SIMD type, scoring goes through {@code NativeEngines990KnnVectorsScorer}
- * → {@code NativeRandomVectorScorer}; otherwise {@link KNN1040HalfFloatFlatVectorsValues#selectFallbackScorer}.
- * Neither fallback may reach Lucene's flat scorer factory, which would read the
- * {@code HasIndexSlice} slice as 4 bytes/dimension and overrun this 2 bytes/dimension data.
+ * With mmap and a native SIMD type, scoring goes through {@code NativeEngines990KnnVectorsScorer}
+ * and {@code NativeRandomVectorScorer}; otherwise {@link KNN1040HalfFloatFlatVectorsValues#selectFallbackScorer}.
  */
 @Log4j2
 public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
 
-    // Lucene99FlatVectorsReader measures its Format class here; that looks like a slip, so measure
-    // the reader instead.
     private static final long SHALLOW_SIZE = RamUsageEstimator.shallowSizeOfInstance(KNN1040HalfFloatFlatVectorsReader.class);
 
     private static final int BULK_SCORE_BATCH_SIZE = 64;
@@ -80,10 +76,6 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
         this(state, scorer, DataAccessHint.RANDOM);
     }
 
-    /**
-     * @param accessHint how this segment's vectors will be read, or {@code null} for no hint.
-     *     Defaults to {@link DataAccessHint#RANDOM}, matching {@code Lucene99FlatVectorsReader}.
-     */
     public KNN1040HalfFloatFlatVectorsReader(SegmentReadState state, FlatVectorsScorer scorer, DataAccessHint accessHint)
         throws IOException {
         super();
@@ -249,7 +241,7 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
         return KNN1040HalfFloatFlatVectorsValues.selectScorer(base, target, entry.similarity);
     }
 
-    /** Exhaustive brute-force search over all FP16 vectors, scoring ords in batches. */
+    // Exhaustive brute-force search over all FP16 vectors, scoring ords in batches.
     @Override
     public void search(String field, float[] target, KnnCollector knnCollector, AcceptDocs acceptDocs) throws IOException {
         RandomVectorScorer randomScorer = getRandomVectorScorer(field, target);

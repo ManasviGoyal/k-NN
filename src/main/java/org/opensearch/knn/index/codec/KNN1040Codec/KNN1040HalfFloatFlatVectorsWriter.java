@@ -45,21 +45,13 @@ import static org.opensearch.knn.index.codec.KNN1040Codec.KNN1040HalfFloatFlatVe
  * (2 bytes per dimension) and writes them sequentially to a {@code .vec} file, with per-field
  * metadata stored in a {@code .vemf} file.
  *
- * <p>The on-disk layout follows the same structural pattern as Lucene's {@code Lucene99FlatVectorsWriter}:
- * <ul>
- *   <li>{@code .vec} — contiguous FP16-encoded vector data, one field after another</li>
- *   <li>{@code .vemf} — per-field metadata (field number, similarity function, offset, length,
- *       dimension, doc count, ord-to-doc mapping)</li>
- * </ul>
- *
- * <p>Each float dimension is converted to IEEE 754 half-float via {@link Float#floatToFloat16(float)}
- * and stored as 2 bytes in little-endian order.
+ * The on-disk layout follows the same structural pattern as Lucene's {@code Lucene99FlatVectorsWriter}:
+ * Each float dimension is converted to IEEE 754 half-float and stored as 2 bytes in little-endian order.
  */
 public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
 
     private static final long SHALLOW_RAM_BYTES_USED = RamUsageEstimator.shallowSizeOfInstance(KNN1040HalfFloatFlatVectorsWriter.class);
 
-    /** Byte alignment for each field's vector data region. See {@link #alignOutput(IndexOutput)}. */
     private static final int VECTOR_DATA_ALIGNMENT = 64;
 
     private final SegmentWriteState segmentWriteState;
@@ -103,13 +95,12 @@ public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
     @Override
     public FlatFieldVectorsWriter<?> addField(FieldInfo fieldInfo) throws IOException {
         checkFloat32Encoding(fieldInfo);
-        // NOTE: FlatFieldVectorsWriter has no public static create() — we use our own inline impl.
+        // NOTE: FlatFieldVectorsWriter has no public static create() method.
         FlatFieldVectorsWriter<?> fieldWriter = new FloatFieldWriter(fieldInfo);
         fields.add(new FieldData(fieldWriter, fieldInfo));
         return fieldWriter;
     }
 
-    /** FP16 is stored under {@link VectorEncoding#FLOAT32}; byte-encoded fields are unsupported. */
     private static void checkFloat32Encoding(FieldInfo fieldInfo) {
         if (fieldInfo.getVectorEncoding() != VectorEncoding.FLOAT32) {
             throw new IllegalArgumentException(
@@ -162,8 +153,11 @@ public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
     public void mergeOneFlatVectorField(FieldInfo fieldInfo, MergeState mergeState) throws IOException {
         checkFloat32Encoding(fieldInfo);
 
-        // Yields vectors in merged doc order, handling deletions and index sorting. A per-reader
-        // loop cannot: under an index sort the readers' new doc ids interleave.
+        // Delegates to MergedVectorValues so vectors come out in final merged-segment doc order,
+        // with deletions filtered and index sorting applied. A naive per-reader loop can't
+        // reproduce this order: under an index sort, each reader's docs are remapped to
+        // non-contiguous ids interleaved with other readers' docs in the merged segment, not laid
+        // out reader-by-reader.
         final FloatVectorValues mergedValues = KnnVectorsWriter.MergedVectorValues.mergeFloatVectorValues(fieldInfo, mergeState);
 
         final long vectorDataOffset = alignOutput(vectorData);
@@ -173,7 +167,7 @@ public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
         writeMeta(fieldInfo, segmentWriteState.segmentInfo.maxDoc(), vectorDataOffset, vectorDataLength, docsWithField);
     }
 
-    /** Encodes vectors to FP16 and writes them, returning the documents that have a vector. */
+    // Encodes vectors to FP16 and writes them, returning the documents that have a vector.
     private static DocsWithFieldSet writeVectorData(IndexOutput output, FloatVectorValues values, int dimension) throws IOException {
         final byte[] outputBuffer = new byte[dimension * Short.BYTES];
         final DocsWithFieldSet docsWithField = new DocsWithFieldSet();

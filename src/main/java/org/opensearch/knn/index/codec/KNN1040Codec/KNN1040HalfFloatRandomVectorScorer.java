@@ -11,14 +11,16 @@ import org.opensearch.knn.jni.SimdVectorComputeService;
 import java.io.IOException;
 
 /**
- * Scores FP16 vectors via native SIMD, reading raw (undecoded) FP16 bytes from the segment's
+ * Scores FP16 vectors via native SIMD, reading raw FP16 bytes from the segment's
  * non-mmap-backed {@link org.apache.lucene.store.IndexInput} slice.
  *
- * <p>The search context is saved once per native call. Unlike
- * {@link org.opensearch.knn.memoryoptsearch.faiss.NativeRandomVectorScorer}, which saves it once
- * for the scorer's lifetime against a stable mmap address, the pinned {@code byte[]} address here
- * is valid only within a single call, so the save cannot be hoisted. Prefer {@link #bulkScore},
- * which amortizes the setup across a batch; {@link #score(int)} pays it for one vector.
+ * The search context is saved once per native call. Both this class and the mmap-backed
+ * {@link org.opensearch.knn.memoryoptsearch.faiss.NativeRandomVectorScorer} use native SIMD; the
+ * difference is address stability. {@code NativeRandomVectorScorer} saves the context once for the
+ * scorer's lifetime against a stable mmap address, but the pinned {@code byte[]} address here is
+ * valid only within a single call, so the save cannot be hoisted the same way. Prefer
+ * {@link #bulkScore}, which amortizes the setup across a batch; {@link #score(int)} pays it for
+ * one vector.
  */
 class KNN1040HalfFloatRandomVectorScorer extends RandomVectorScorer.AbstractRandomVectorScorer {
     private final KNN1040HalfFloatFlatVectorsValues values;

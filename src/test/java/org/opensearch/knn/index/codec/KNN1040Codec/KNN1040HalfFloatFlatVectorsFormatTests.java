@@ -143,10 +143,6 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
         }
     }
 
-    /**
-     * An unknown field is a programming error, not a data condition — {@code PerFieldKnnVectorsFormat}
-     * only routes fields this reader wrote. Matches {@code Lucene99FlatVectorsReader.getFieldEntryOrThrow}.
-     */
     @SneakyThrows
     public void testGetFloatVectorValues_unknownField_throws() {
         try (MMapDirectory dir = new MMapDirectory(createTempDir())) {
@@ -385,15 +381,14 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
     }
 
     /**
-     * {@code Values.scorer(target)} used to always fall back to tier 2/3 even when mmap was
-     * available, since it never attempted address extraction the way the reader's
-     * {@code getRandomVectorScorer} did. This proves the shared {@code selectScorer} helper now
-     * selects tier 1 ({@link NativeRandomVectorScorer}) for {@code scorer()} too, matching the
-     * reader's own tier selection -- exercised through {@link MMapFloatVectorValues#scorer}, the
-     * exact path Lucene's filtered exact-search fallback and rescore use.
+     * Verifies {@code Values.scorer(target)} picks the mmap-backed {@link NativeRandomVectorScorer}
+     * via the shared {@code selectScorer} helper, matching the reader's own selection -- exercised
+     * through {@link MMapFloatVectorValues#scorer}, the path Lucene's filtered exact-search fallback
+     * and rescore use. Guards against silently falling back to the non-mmap scorer when mmap is
+     * available.
      */
     @SneakyThrows
-    public void testValuesScorer_mmapDirectory_selectsTier1NativeScorer() {
+    public void testValuesScorer_mmapDirectory_selectsNativeScorer() {
         try (MMapDirectory dir = new MMapDirectory(createTempDir())) {
             float[][] vectors = generateVectors(NUM_VECTORS, DIMENSION);
             SegmentReadState readState = writeVectors(dir, vectors, VectorSimilarityFunction.EUCLIDEAN);
@@ -413,8 +408,8 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
                     RandomVectorScorer.AbstractRandomVectorScorer.class
                 );
                 assertTrue(
-                    "scorer() should select tier 1 (NativeRandomVectorScorer) when mmap and a native "
-                        + "similarity type are both available, not fall back to tier 2/3",
+                    "scorer() should select the mmap-backed NativeRandomVectorScorer when mmap and a "
+                        + "native similarity type are both available, not fall back to the non-native scorer",
                     prefetchDelegate instanceof org.opensearch.knn.memoryoptsearch.faiss.NativeRandomVectorScorer
                 );
 
@@ -433,10 +428,9 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
     }
 
     /**
-     * {@code KNN1040HalfFloatFlatVectorsValues.scorer()} returns an anonymous {@link VectorScorer}
-     * that captures its {@code RandomVectorScorer} in a synthetic field named {@code val$scorer}
-     * (javac's naming for a captured effectively-final local). Unwrapping it this way, rather than
-     * exposing the field on the production type, keeps the test-only concern out of production code.
+     * Reflectively unwraps the {@code RandomVectorScorer} captured in the anonymous
+     * {@link VectorScorer} that {@code scorer()} returns (stored as javac's synthetic
+     * {@code val$scorer} field), so production code doesn't need a test-only accessor.
      */
     private static RandomVectorScorer unwrapCapturedScorer(VectorScorer vectorScorer) throws Exception {
         return getPrivateField(vectorScorer, "val$scorer", RandomVectorScorer.class);
@@ -451,13 +445,6 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
 
     @SneakyThrows
     public void testSearch_cosineWithMmapDirectory_doesNotThrowAndMatchesExpected() {
-        // Regression test for the original crash: COSINE has no native SIMD type
-        // (NativeEngines990KnnVectorsScorer#getNativeFunctionType returns null for it), so with mmap
-        // available this used to fall through to Lucene's own delegate scorer, which detects
-        // HasIndexSlice on KNN1040HalfFloatFlatVectorsValues and reads the slice assuming 4 bytes/dimension
-        // (float32) instead of this format's 2 bytes/dimension (FP16) -- overreading past the
-        // buffer on the tail vectors and throwing IndexOutOfBoundsException. This is the deterministic
-        // trigger: COSINE always takes this path regardless of whether mmap extraction succeeds.
         try (MMapDirectory dir = new MMapDirectory(createTempDir())) {
             float[][] vectors = generateVectors(NUM_VECTORS, DIMENSION);
             SegmentReadState readState = writeVectors(dir, vectors, VectorSimilarityFunction.COSINE);
@@ -523,15 +510,13 @@ public class KNN1040HalfFloatFlatVectorsFormatTests extends KNNTestCase {
     }
 
     /**
-     * Merges several segments under an index sort that interleaves them, and verifies every doc
-     * still carries the vector it was indexed with.
+     * Merges segments under a descending index sort, so later segments land entirely before
+     * earlier ones, and checks every doc still has the right vector.
      *
-     * <p>The sort key ascends with insertion order while the sort is descending, so each later
-     * segment sorts entirely <em>before</em> the earlier ones in the merged segment. A merge that
-     * walks {@code mergeState.knnVectorsReaders} in order and appends {@code docMap.get(doc)} would
-     * emit descending doc ids at the first reader boundary and trip {@code DocsWithFieldSet}'s
-     * strictly-increasing check. Without an index sort each reader maps to a contiguous increasing
-     * block, which is why {@code testHalfFloatFlatIndex_forceMerge} cannot catch this.
+     * <p>A merge that appends {@code docMap.get(doc)} reader-by-reader would emit descending doc
+     * ids at the first reader boundary, tripping {@code DocsWithFieldSet}'s strictly-increasing
+     * check -- a bug {@code testHalfFloatFlatIndex_forceMerge} can't catch, since without a sort
+     * each reader's block is already increasing.
      */
     @SneakyThrows
     public void testMergeWithIndexSort_preservesDocToVectorMapping() {
