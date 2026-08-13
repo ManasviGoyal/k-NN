@@ -79,6 +79,7 @@ import static org.opensearch.knn.common.KNNConstants.KNN_ENGINE;
 import static org.opensearch.knn.common.KNNConstants.KNN_METHOD;
 import static org.opensearch.knn.common.KNNConstants.LUCENE_NAME;
 import static org.opensearch.knn.common.KNNConstants.METHOD_ENCODER_PARAMETER;
+import static org.opensearch.knn.common.KNNConstants.METHOD_FLAT;
 import static org.opensearch.knn.common.KNNConstants.METHOD_HNSW;
 import static org.opensearch.knn.common.KNNConstants.METHOD_IVF;
 import static org.opensearch.knn.common.KNNConstants.METHOD_PARAMETER_EF_CONSTRUCTION;
@@ -2686,6 +2687,97 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
             buildParserContext(indexName, settings)
         );
         assertNotNull(builder3);
+    }
+
+    @SneakyThrows
+    public void testTypeParser_whenHalfFloatFlatWithNoCompressionConfigured_thenSuccess() {
+        String fieldName = "test-field-name";
+        String indexName = "test-index-name";
+
+        Settings settings = Settings.builder().put(settings(CURRENT).build()).put(KNN_INDEX, true).build();
+        ModelDao modelDao = mock(ModelDao.class);
+        KNNVectorFieldMapper.TypeParser typeParser = new KNNVectorFieldMapper.TypeParser(() -> modelDao);
+
+        // half_float + flat with no compression_level set must still succeed
+        // and implicitly resolve to 2x
+        XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()
+            .startObject()
+            .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+            .field(DIMENSION_FIELD_NAME, TEST_DIMENSION)
+            .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+            .startObject(KNN_METHOD)
+            .field(NAME, METHOD_FLAT)
+            .field(KNN_ENGINE, KNNEngine.LUCENE.getName())
+            .endObject()
+            .endObject();
+
+        KNNVectorFieldMapper.Builder builder = (KNNVectorFieldMapper.Builder) typeParser.parse(
+            fieldName,
+            xContentBuilderToMap(xContentBuilder),
+            buildParserContext(indexName, settings)
+        );
+        assertNotNull(builder);
+    }
+
+    @SneakyThrows
+    public void testTypeParser_whenHalfFloatFlatWithExplicitX2Compression_thenSuccess() {
+        String fieldName = "test-field-name";
+        String indexName = "test-index-name";
+
+        Settings settings = Settings.builder().put(settings(CURRENT).build()).put(KNN_INDEX, true).build();
+        ModelDao modelDao = mock(ModelDao.class);
+        KNNVectorFieldMapper.TypeParser typeParser = new KNNVectorFieldMapper.TypeParser(() -> modelDao);
+
+        XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()
+            .startObject()
+            .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+            .field(DIMENSION_FIELD_NAME, TEST_DIMENSION)
+            .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+            .field(COMPRESSION_LEVEL_PARAMETER, CompressionLevel.x2.getName())
+            .startObject(KNN_METHOD)
+            .field(NAME, METHOD_FLAT)
+            .field(KNN_ENGINE, KNNEngine.LUCENE.getName())
+            .endObject()
+            .endObject();
+
+        KNNVectorFieldMapper.Builder builder = (KNNVectorFieldMapper.Builder) typeParser.parse(
+            fieldName,
+            xContentBuilderToMap(xContentBuilder),
+            buildParserContext(indexName, settings)
+        );
+        assertNotNull(builder);
+        assertEquals(CompressionLevel.x2.getName(), builder.compressionLevel.get());
+    }
+
+    @SneakyThrows
+    public void testTypeParser_whenHalfFloatFlatWithExplicitX32Compression_thenThrow() {
+        String fieldName = "test-field-name";
+        String indexName = "test-index-name";
+
+        Settings settings = Settings.builder().put(settings(CURRENT).build()).put(KNN_INDEX, true).build();
+        ModelDao modelDao = mock(ModelDao.class);
+        KNNVectorFieldMapper.TypeParser typeParser = new KNNVectorFieldMapper.TypeParser(() -> modelDao);
+
+        // half_float only ever resolves to 2x (its actual on-disk footprint); any other explicit
+        // compression value must still be rejected, just no longer by the mapper's blanket
+        // non-float check -- by LuceneFlatMethodResolver's per-data-type validation instead.
+        XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()
+            .startObject()
+            .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+            .field(DIMENSION_FIELD_NAME, TEST_DIMENSION)
+            .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+            .field(COMPRESSION_LEVEL_PARAMETER, CompressionLevel.x32.getName())
+            .startObject(KNN_METHOD)
+            .field(NAME, METHOD_FLAT)
+            .field(KNN_ENGINE, KNNEngine.LUCENE.getName())
+            .endObject()
+            .endObject();
+
+        ValidationException exception = expectThrows(
+            ValidationException.class,
+            () -> typeParser.parse(fieldName, xContentBuilderToMap(xContentBuilder), buildParserContext(indexName, settings))
+        );
+        assertTrue(exception.getMessage().contains("\"2x\" compression"));
     }
 
     @SneakyThrows
