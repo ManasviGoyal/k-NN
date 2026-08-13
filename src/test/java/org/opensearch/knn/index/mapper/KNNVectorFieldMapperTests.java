@@ -1588,9 +1588,7 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
     }
 
     @SneakyThrows
-    public void testMethodFieldMapperParseCreateField_whenHalfFloatWithLuceneHNSW_thenValidationFails() {
-        // HALF_FLOAT + HNSW is rejected at method validation time (not createFieldMapper).
-        // This test verifies the validation rejects HALF_FLOAT for HNSW at the engine level.
+    public void testMethodFieldMapperParseCreateField_whenHalfFloatWithLuceneHNSW_thenValidationSucceeds() {
         KNNMethodConfigContext knnMethodConfigContext = KNNMethodConfigContext.builder()
             .vectorDataType(VectorDataType.HALF_FLOAT)
             .versionCreated(CURRENT)
@@ -1599,8 +1597,8 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
         final MethodComponentContext methodComponentContext = new MethodComponentContext(METHOD_HNSW, Collections.emptyMap());
         final KNNMethodContext knnMethodContext = new KNNMethodContext(KNNEngine.LUCENE, SpaceType.L2, methodComponentContext);
 
-        assertNotNull(
-            "HALF_FLOAT should not be supported for Lucene HNSW method",
+        assertNull(
+            "HALF_FLOAT should be supported for Lucene HNSW method",
             KNNEngine.LUCENE.validateMethod(knnMethodContext, knnMethodConfigContext)
         );
     }

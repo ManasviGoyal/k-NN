@@ -146,7 +146,7 @@ public class LuceneTests extends KNNTestCase {
         assertTrue(luceneMmapExtensions.containsAll(expectedSettings));
     }
 
-    public void testLuceneHNSWMethod_whenHalfFloat_thenValidationFails() {
+    public void testLuceneHNSWMethod_whenHalfFloat_thenValidationPasses() {
         KNNMethodConfigContext knnMethodConfigContext = KNNMethodConfigContext.builder()
             .versionCreated(org.opensearch.Version.CURRENT)
             .dimension(10)
@@ -157,8 +157,8 @@ public class LuceneTests extends KNNTestCase {
             SpaceType.L2,
             new MethodComponentContext(METHOD_HNSW, Collections.emptyMap())
         );
-        assertNotNull(
-            "HALF_FLOAT should not be supported for Lucene HNSW method",
+        assertNull(
+            "HALF_FLOAT should be supported for Lucene HNSW method",
             KNNEngine.LUCENE.validateMethod(knnMethodContext, knnMethodConfigContext)
         );
     }

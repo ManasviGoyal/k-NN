@@ -92,6 +92,9 @@ public class KNN1040PerFieldKnnVectorsFormat extends KNN1040BasePerFieldKnnVecto
             if (p.getSpaceType() == SpaceType.HAMMING) {
                 return new KNN9120HnswBinaryVectorsFormat(p.getMaxConnections(), p.getBeamWidth(), merge.v1(), merge.v2(), threshold);
             }
+            if (ctx.getVectorDataType() == VectorDataType.HALF_FLOAT) {
+                return new KNN1040HnswHalfFloatVectorsFormat(p.getMaxConnections(), p.getBeamWidth(), merge.v1(), merge.v2(), threshold);
+            }
             return new Lucene99HnswVectorsFormat(p.getMaxConnections(), p.getBeamWidth(), merge.v1(), merge.v2(), threshold);
         }, LuceneVectorsFormatType.SCALAR_QUANTIZED, ctx -> {
             final KNNScalarQuantizedVectorsFormatParams p = new KNNScalarQuantizedVectorsFormatParams(
