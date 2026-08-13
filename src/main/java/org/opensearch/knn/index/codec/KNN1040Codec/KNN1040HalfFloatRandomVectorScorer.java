@@ -14,20 +14,23 @@ import java.io.IOException;
  * Scores FP16 vectors via native SIMD, reading raw FP16 bytes from the segment's
  * non-mmap-backed {@link org.apache.lucene.store.IndexInput} slice.
  *
- * The search context is saved once per native call. Both this class and the mmap-backed
- * {@link org.opensearch.knn.memoryoptsearch.faiss.NativeRandomVectorScorer} use native SIMD; the
- * difference is address stability. {@code NativeRandomVectorScorer} saves the context once for the
- * scorer's lifetime against a stable mmap address, but the pinned {@code byte[]} address here is
- * valid only within a single call, so the save cannot be hoisted the same way. Prefer
- * {@link #bulkScore}, which amortizes the setup across a batch; {@link #score(int)} pays it for
- * one vector.
+ * The search context (query buffer + similarity function) is saved once, in the constructor, for
+ * the scorer's lifetime — same as the mmap-backed
+ * {@link org.opensearch.knn.memoryoptsearch.faiss.NativeRandomVectorScorer}. The difference is
+ * address stability: {@code NativeRandomVectorScorer} points the saved context at a stable mmap
+ * address once and never touches it again, whereas the vector bytes here are only pinned for the
+ * duration of a single native call, so {@link #score} and {@link #bulkScore} must repoint the saved
+ * context at a fresh chunk every call via {@link SimdVectorComputeService#scoreSimilarityInBulkFromBytes}
+ * — that call skips re-copying the query and re-selecting the similarity function, updating only the
+ * vector chunk location before scoring.
  */
 class KNN1040HalfFloatRandomVectorScorer extends RandomVectorScorer.AbstractRandomVectorScorer {
     private final KNN1040HalfFloatFlatVectorsValues values;
-    private final float[] target;
-    private final int nativeFunctionTypeOrd;
     private byte[] vectorBytesBuffer;
     private final float[] singleScoreBuffer = new float[1];
+    private final int[] singleVectorId = new int[] { 0 };
+    // Positional ids of the vectors packed into vectorBytesBuffer
+    private int[] identityIds = new int[0];
 
     KNN1040HalfFloatRandomVectorScorer(
         KNN1040HalfFloatFlatVectorsValues values,
@@ -36,22 +39,14 @@ class KNN1040HalfFloatRandomVectorScorer extends RandomVectorScorer.AbstractRand
     ) {
         super(values);
         this.values = values;
-        this.target = target;
-        this.nativeFunctionTypeOrd = nativeFunctionType.ordinal();
         this.vectorBytesBuffer = new byte[values.byteSize()];
+        SimdVectorComputeService.saveSearchContext(target, new long[0], nativeFunctionType.ordinal());
     }
 
     @Override
     public float score(int node) throws IOException {
         values.readRawVectorBytes(node, vectorBytesBuffer, 0);
-        SimdVectorComputeService.scoreSimilarityInBulkFromBytes(
-            target,
-            vectorBytesBuffer,
-            values.dimension(),
-            nativeFunctionTypeOrd,
-            1,
-            singleScoreBuffer
-        );
+        SimdVectorComputeService.scoreSimilarityInBulkFromBytes(vectorBytesBuffer, 1, singleVectorId, singleScoreBuffer);
         return singleScoreBuffer[0];
     }
 
@@ -65,13 +60,18 @@ class KNN1040HalfFloatRandomVectorScorer extends RandomVectorScorer.AbstractRand
         for (int i = 0; i < numNodes; i++) {
             values.readRawVectorBytes(nodes[i], vectorBytesBuffer, i * byteSize);
         }
-        return SimdVectorComputeService.scoreSimilarityInBulkFromBytes(
-            target,
-            vectorBytesBuffer,
-            values.dimension(),
-            nativeFunctionTypeOrd,
-            numNodes,
-            scores
-        );
+        growIdentityIds(numNodes);
+        return SimdVectorComputeService.scoreSimilarityInBulkFromBytes(vectorBytesBuffer, numNodes, identityIds, scores);
+    }
+
+    private void growIdentityIds(int numNodes) {
+        int previousLength = identityIds.length;
+        if (previousLength >= numNodes) {
+            return;
+        }
+        identityIds = new int[numNodes];
+        for (int i = 0; i < numNodes; i++) {
+            identityIds[i] = i;
+        }
     }
 }
