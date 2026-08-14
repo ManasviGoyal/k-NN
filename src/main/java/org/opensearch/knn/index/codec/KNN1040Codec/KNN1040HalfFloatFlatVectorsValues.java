@@ -15,6 +15,7 @@ import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.util.hnsw.RandomVectorScorer;
 import org.apache.lucene.util.packed.DirectMonotonicReader;
 import org.opensearch.knn.index.codec.scorer.NativeEngines990KnnVectorsScorer;
+import org.opensearch.knn.index.codec.scorer.PrefetchableFlatVectorScorer.PrefetchableRandomVectorScorer;
 import org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer;
 import org.opensearch.knn.jni.SimdFp16;
 import org.opensearch.knn.jni.SimdVectorComputeService;
@@ -179,7 +180,9 @@ class KNN1040HalfFloatFlatVectorsValues extends FloatVectorValues implements Has
     /**
      * Builds a {@link RandomVectorScorer} that never exposes {@code values} to Lucene's own flat
      * vector scorer factory. Used whenever mmap address extraction fails, or the similarity
-     * function has no native SIMD type.
+     * function has no native SIMD type. Wrapped in {@link PrefetchableRandomVectorScorer} - same as
+     * {@link #selectScorer}'s mmap tier gets via {@code KNN1040HalfFloatVectorScorer#getRandomVectorScorer} -
+     * so this tier still prefetches ahead of bulk scoring during graph traversal.
      */
     static RandomVectorScorer selectFallbackScorer(
         KNN1040HalfFloatFlatVectorsValues values,
@@ -187,14 +190,17 @@ class KNN1040HalfFloatFlatVectorsValues extends FloatVectorValues implements Has
         VectorSimilarityFunction similarity
     ) {
         SimdVectorComputeService.SimilarityFunctionType nativeType = NativeEngines990KnnVectorsScorer.getNativeFunctionType(similarity);
+        RandomVectorScorer.AbstractRandomVectorScorer scorer;
         if (nativeType != null && SimdFp16.isSIMDSupported()) {
-            return new KNN1040HalfFloatVectorScorer.HalfFloatRandomVectorScorer(values, target, nativeType);
+            scorer = new KNN1040HalfFloatVectorScorer.HalfFloatRandomVectorScorer(values, target, nativeType, null);
+        } else {
+            scorer = new RandomVectorScorer.AbstractRandomVectorScorer(values) {
+                @Override
+                public float score(int node) throws IOException {
+                    return similarity.compare(target, values.vectorValue(node));
+                }
+            };
         }
-        return new RandomVectorScorer.AbstractRandomVectorScorer(values) {
-            @Override
-            public float score(int node) throws IOException {
-                return similarity.compare(target, values.vectorValue(node));
-            }
-        };
+        return new PrefetchableRandomVectorScorer(scorer);
     }
 }

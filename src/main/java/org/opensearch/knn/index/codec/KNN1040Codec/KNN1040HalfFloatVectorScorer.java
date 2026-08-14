@@ -14,6 +14,7 @@ import org.apache.lucene.util.hnsw.RandomVectorScorer;
 import org.apache.lucene.util.hnsw.RandomVectorScorerSupplier;
 import org.apache.lucene.util.hnsw.UpdateableRandomVectorScorer;
 import org.opensearch.knn.index.codec.scorer.NativeEngines990KnnVectorsScorer;
+import org.opensearch.knn.index.codec.scorer.PrefetchableFlatVectorScorer.PrefetchableRandomVectorScorer;
 import org.opensearch.knn.jni.SimdFp16;
 import org.opensearch.knn.jni.SimdVectorComputeService;
 import org.opensearch.knn.memoryoptsearch.faiss.MMapFloatVectorValues;
@@ -45,8 +46,12 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
     ) throws IOException {
         FloatVectorValues bottomValues = WrappedFloatVectorValues.getBottomFloatVectorValues(vectorValues);
         // MMapFloatVectorValues doesn't extend WrappedFloatVectorValues, so the unwrap above stops at
-        // it rather than reaching the FP16 values it wraps - unwrap that one extra layer here.
+        // it rather than reaching the FP16 values it wraps - unwrap that one extra layer here. Keep its
+        // address around: when present, candidate scoring can read straight from mapped memory instead
+        // of copying each candidate's bytes out of the IndexInput slice first.
+        long[] addressAndSize = null;
         if (bottomValues instanceof MMapFloatVectorValues mmapValues) {
+            addressAndSize = mmapValues.getAddressAndSize();
             bottomValues = mmapValues.getDelegate();
         }
         if (bottomValues instanceof KNN1040HalfFloatFlatVectorsValues halfFloatValues) {
@@ -54,7 +59,7 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
                 similarityFunction
             );
             if (nativeType != null && SimdFp16.isSIMDSupported()) {
-                return new HalfFloatRandomVectorScorerSupplier(halfFloatValues, nativeType);
+                return new HalfFloatRandomVectorScorerSupplier(halfFloatValues, nativeType, addressAndSize);
             }
             // No native FP16 kernel for this similarity function (e.g. COSINE - see
             // NativeEngines990KnnVectorsScorer#getNativeFunctionType), or SIMD isn't available. Must
@@ -107,24 +112,35 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
         private final KNN1040HalfFloatFlatVectorsValues values;
         private final KNN1040HalfFloatFlatVectorsValues targetValues;
         private final SimdVectorComputeService.SimilarityFunctionType nativeType;
+        private final long[] addressAndSize;
 
-        HalfFloatRandomVectorScorerSupplier(KNN1040HalfFloatFlatVectorsValues values, SimdVectorComputeService.SimilarityFunctionType nativeType)
-            throws IOException {
+        HalfFloatRandomVectorScorerSupplier(
+            KNN1040HalfFloatFlatVectorsValues values,
+            SimdVectorComputeService.SimilarityFunctionType nativeType,
+            long[] addressAndSize
+        ) throws IOException {
             this.values = values;
             this.targetValues = values.copy();
             this.nativeType = nativeType;
+            this.addressAndSize = addressAndSize;
         }
 
         @Override
         public UpdateableRandomVectorScorer scorer() {
             return new UpdateableRandomVectorScorer.AbstractUpdateableRandomVectorScorer(values) {
                 private HalfFloatRandomVectorScorer delegate;
+                // Wraps `delegate` once it exists, prefetching candidate bytes ahead of each bulkScore
+                // call - same PrefetchableRandomVectorScorer used for search's mmap tier and the flat
+                // fallback tier. Built once alongside `delegate` and reused across setScoringOrdinal
+                // calls, same as the buffer/native-context reuse below.
+                private PrefetchableRandomVectorScorer prefetchableDelegate;
 
                 @Override
                 public void setScoringOrdinal(int node) throws IOException {
                     float[] target = targetValues.vectorValue(node);
                     if (delegate == null) {
-                        delegate = new HalfFloatRandomVectorScorer(values, target, nativeType);
+                        delegate = new HalfFloatRandomVectorScorer(values, target, nativeType, addressAndSize);
+                        prefetchableDelegate = new PrefetchableRandomVectorScorer(delegate);
                     } else {
                         // Reuse the existing scorer/buffer instead of allocating a fresh one for every
                         // graph node - only the native search context needs to change.
@@ -134,66 +150,81 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
 
                 @Override
                 public float score(int node) throws IOException {
-                    return delegate.score(node);
+                    return prefetchableDelegate.score(node);
                 }
 
                 @Override
                 public float bulkScore(int[] nodes, float[] scores, int numNodes) throws IOException {
-                    return delegate.bulkScore(nodes, scores, numNodes);
+                    return prefetchableDelegate.bulkScore(nodes, scores, numNodes);
                 }
             };
         }
 
         @Override
         public RandomVectorScorerSupplier copy() throws IOException {
-            return new HalfFloatRandomVectorScorerSupplier(values.copy(), nativeType);
+            return new HalfFloatRandomVectorScorerSupplier(values.copy(), nativeType, addressAndSize);
         }
     }
 
     /**
-     * Scores FP16 vectors via native SIMD, reading raw FP16 bytes from the segment's
-     * non-mmap-backed {@link org.apache.lucene.store.IndexInput} slice.
+     * Scores FP16 vectors via native SIMD. When {@code addressAndSize} is available (the segment
+     * being read from is mmap-backed), candidates are scored directly off mapped memory by ordinal -
+     * the same zero-copy mechanism {@link org.opensearch.knn.memoryoptsearch.faiss.NativeRandomVectorScorer}
+     * uses for search - via {@link SimdVectorComputeService#scoreSimilarity}/{@code scoreSimilarityInBulk}.
+     * Otherwise candidates are read one at a time from the segment's {@link org.apache.lucene.store.IndexInput}
+     * slice into a heap buffer before scoring via {@link SimdVectorComputeService#scoreSimilarityInBulkFromBytes}.
      *
-     * The search context (query buffer + similarity function) is saved once, in the constructor, for
-     * the scorer's lifetime — same as the mmap-backed
-     * {@link org.opensearch.knn.memoryoptsearch.faiss.NativeRandomVectorScorer}. The difference is
-     * address stability: {@code NativeRandomVectorScorer} points the saved context at a stable mmap
-     * address once and never touches it again, whereas the vector bytes here are only pinned for the
-     * duration of a single native call, so {@link #score} and {@link #bulkScore} must repoint the saved
-     * context at a fresh chunk every call via {@link SimdVectorComputeService#scoreSimilarityInBulkFromBytes}
-     * — that call skips re-copying the query and re-selecting the similarity function, updating only the
-     * vector chunk location before scoring.
+     * The search context (query buffer + similarity function, plus the mmap address when present) is
+     * saved once per target in {@link #setTarget}, since the "current" graph node being scored against
+     * changes on every {@link UpdateableRandomVectorScorer#setScoringOrdinal} call during HNSW graph
+     * build - unlike search's fixed-for-the-scorer's-lifetime query.
      */
     static class HalfFloatRandomVectorScorer extends RandomVectorScorer.AbstractRandomVectorScorer {
         private final KNN1040HalfFloatFlatVectorsValues values;
         private final SimdVectorComputeService.SimilarityFunctionType nativeFunctionType;
+        private final long[] addressAndSize;
         private byte[] vectorBytesBuffer;
         private final float[] singleScoreBuffer = new float[1];
         private final int[] singleVectorId = new int[] { 0 };
-        // Positional ids of the vectors packed into vectorBytesBuffer
+        // Positional ids of the vectors packed into vectorBytesBuffer - only used without an mmap address
         private int[] identityIds = new int[0];
 
         HalfFloatRandomVectorScorer(
             KNN1040HalfFloatFlatVectorsValues values,
             float[] target,
-            SimdVectorComputeService.SimilarityFunctionType nativeFunctionType
+            SimdVectorComputeService.SimilarityFunctionType nativeFunctionType,
+            long[] addressAndSize
         ) {
             super(values);
             this.values = values;
             this.nativeFunctionType = nativeFunctionType;
-            this.vectorBytesBuffer = new byte[values.byteSize()];
+            this.addressAndSize = addressAndSize;
+            if (!usesMmapAddress()) {
+                this.vectorBytesBuffer = new byte[values.byteSize()];
+            }
             setTarget(target);
+        }
+
+        private boolean usesMmapAddress() {
+            return addressAndSize != null && addressAndSize.length > 0;
         }
 
         // Repoints the native search context at a new target vector, reusing this scorer's buffers -
         // lets callers that score against many targets in sequence (e.g. HNSW graph build) avoid
         // allocating a fresh scorer per target.
         void setTarget(float[] target) {
-            SimdVectorComputeService.saveSearchContext(target, new long[0], nativeFunctionType.ordinal());
+            SimdVectorComputeService.saveSearchContext(
+                target,
+                usesMmapAddress() ? addressAndSize : new long[0],
+                nativeFunctionType.ordinal()
+            );
         }
 
         @Override
         public float score(int node) throws IOException {
+            if (usesMmapAddress()) {
+                return SimdVectorComputeService.scoreSimilarity(node);
+            }
             values.readRawVectorBytes(node, vectorBytesBuffer, 0);
             SimdVectorComputeService.scoreSimilarityInBulkFromBytes(vectorBytesBuffer, 1, singleVectorId, singleScoreBuffer);
             return singleScoreBuffer[0];
@@ -201,6 +232,9 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
 
         @Override
         public float bulkScore(int[] nodes, float[] scores, int numNodes) throws IOException {
+            if (usesMmapAddress()) {
+                return SimdVectorComputeService.scoreSimilarityInBulk(nodes, scores, numNodes);
+            }
             int byteSize = values.byteSize();
             int requiredBytes = numNodes * byteSize;
             if (vectorBytesBuffer.length < requiredBytes) {
