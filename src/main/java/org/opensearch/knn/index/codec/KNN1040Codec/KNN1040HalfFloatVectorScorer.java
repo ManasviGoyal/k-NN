@@ -122,7 +122,14 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
 
                 @Override
                 public void setScoringOrdinal(int node) throws IOException {
-                    delegate = new HalfFloatRandomVectorScorer(values, targetValues.vectorValue(node), nativeType);
+                    float[] target = targetValues.vectorValue(node);
+                    if (delegate == null) {
+                        delegate = new HalfFloatRandomVectorScorer(values, target, nativeType);
+                    } else {
+                        // Reuse the existing scorer/buffer instead of allocating a fresh one for every
+                        // graph node - only the native search context needs to change.
+                        delegate.setTarget(target);
+                    }
                 }
 
                 @Override
@@ -159,6 +166,7 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
      */
     static class HalfFloatRandomVectorScorer extends RandomVectorScorer.AbstractRandomVectorScorer {
         private final KNN1040HalfFloatFlatVectorsValues values;
+        private final SimdVectorComputeService.SimilarityFunctionType nativeFunctionType;
         private byte[] vectorBytesBuffer;
         private final float[] singleScoreBuffer = new float[1];
         private final int[] singleVectorId = new int[] { 0 };
@@ -172,7 +180,15 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
         ) {
             super(values);
             this.values = values;
+            this.nativeFunctionType = nativeFunctionType;
             this.vectorBytesBuffer = new byte[values.byteSize()];
+            setTarget(target);
+        }
+
+        // Repoints the native search context at a new target vector, reusing this scorer's buffers -
+        // lets callers that score against many targets in sequence (e.g. HNSW graph build) avoid
+        // allocating a fresh scorer per target.
+        void setTarget(float[] target) {
             SimdVectorComputeService.saveSearchContext(target, new long[0], nativeFunctionType.ordinal());
         }
 
