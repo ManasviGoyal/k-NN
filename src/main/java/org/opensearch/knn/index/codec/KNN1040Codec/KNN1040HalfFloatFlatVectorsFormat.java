@@ -34,8 +34,8 @@ public class KNN1040HalfFloatFlatVectorsFormat extends FlatVectorsFormat {
     static final int VERSION_CURRENT = VERSION_START;
     static final int DIRECT_MONOTONIC_BLOCK_SHIFT = 16;
 
-    private static final FlatVectorsScorer KNN_1040_HALF_FLOAT_FLAT_VECTORS_SCORER = new PrefetchableFlatVectorScorer(
-        new NativeEngines990KnnVectorsScorer(FlatVectorsScorerProvider.getLucene99FlatVectorsScorer())
+    private static final FlatVectorsScorer KNN_1040_HALF_FLOAT_FLAT_VECTORS_SCORER = new KNN1040HalfFloatVectorScorer(
+        new PrefetchableFlatVectorScorer(new NativeEngines990KnnVectorsScorer(FlatVectorsScorerProvider.getLucene99FlatVectorsScorer()))
     );
 
     public KNN1040HalfFloatFlatVectorsFormat() {

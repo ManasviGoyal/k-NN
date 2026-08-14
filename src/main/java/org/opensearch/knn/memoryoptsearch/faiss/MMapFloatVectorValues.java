@@ -32,6 +32,7 @@ public class MMapFloatVectorValues extends FloatVectorValues implements MMapVect
     // addressAndSize[3] has the size of the second mapped region.
     @Getter
     private final long[] addressAndSize;
+    @Getter
     private final FloatVectorValues delegate;
 
     public MMapFloatVectorValues(final FloatVectorValues delegate, final long[] addressAndSize) {
