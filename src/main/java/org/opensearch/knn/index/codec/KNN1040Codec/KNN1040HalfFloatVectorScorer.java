@@ -172,7 +172,7 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
      * the same zero-copy mechanism {@link org.opensearch.knn.memoryoptsearch.faiss.NativeRandomVectorScorer}
      * uses for search - via {@link SimdVectorComputeService#scoreSimilarity}/{@code scoreSimilarityInBulk}.
      * Otherwise candidates are read one at a time from the segment's {@link org.apache.lucene.store.IndexInput}
-     * slice into a heap buffer before scoring via {@link SimdVectorComputeService#scoreSimilarityInBulkFromBytes}.
+     * slice into a heap buffer before scoring via {@link SimdVectorComputeService#scoreSimilarityInBulkFromFp16Bytes}.
      *
      * The search context (query buffer + similarity function, plus the mmap address when present) is
      * saved once per target in {@link #setTarget}, since the "current" graph node being scored against
@@ -226,7 +226,7 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
                 return SimdVectorComputeService.scoreSimilarity(node);
             }
             values.readRawVectorBytes(node, vectorBytesBuffer, 0);
-            SimdVectorComputeService.scoreSimilarityInBulkFromBytes(vectorBytesBuffer, 1, singleVectorId, singleScoreBuffer);
+            SimdVectorComputeService.scoreSimilarityInBulkFromFp16Bytes(vectorBytesBuffer, 1, singleVectorId, singleScoreBuffer);
             return singleScoreBuffer[0];
         }
 
@@ -244,7 +244,7 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
                 values.readRawVectorBytes(nodes[i], vectorBytesBuffer, i * byteSize);
             }
             growIdentityIds(numNodes);
-            return SimdVectorComputeService.scoreSimilarityInBulkFromBytes(vectorBytesBuffer, numNodes, identityIds, scores);
+            return SimdVectorComputeService.scoreSimilarityInBulkFromFp16Bytes(vectorBytesBuffer, numNodes, identityIds, scores);
         }
 
         private void growIdentityIds(int numNodes) {

@@ -8,11 +8,8 @@ package org.opensearch.knn.index.codec.util;
 import org.apache.lucene.util.BytesRef;
 import org.opensearch.knn.KNNTestCase;
 
-import java.util.Random;
-
 public class KNNVectorAsCollectionOfHalfFloatsSerializerTests extends KNNTestCase {
 
-    Random random = new Random();
     private static final float FP16_TOLERANCE = 1e-3f;
 
     public void testVectorAsCollectionOfHalfFloatsSerializer() {
@@ -128,6 +125,10 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializerTests extends KNNTestCas
         BytesRef negativeLength = new BytesRef(new byte[4]);
         negativeLength.length = -2;
         assertThrows(IllegalArgumentException.class, () -> serializer.byteToFloatArray(negativeLength));
+
+        BytesRef oddNegativeLength = new BytesRef(new byte[4]);
+        oddNegativeLength.length = -1;
+        assertThrows(IllegalArgumentException.class, () -> serializer.byteToFloatArray(oddNegativeLength));
     }
 
     public void testSpecialFloatValues() {
@@ -226,13 +227,17 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializerTests extends KNNTestCas
             IllegalArgumentException.class,
             () -> { serializer.floatToByteArray(input, undersized, dim); }
         );
-        assertEquals("Output buffer size mismatch. Must be 2x dimension.", e1.getMessage());
+        assertTrue(e1.getMessage().contains("Output buffer size mismatch"));
+        assertTrue(e1.getMessage().contains("output.length=63"));
+        assertTrue(e1.getMessage().contains("dimension=32"));
 
         IllegalArgumentException e2 = expectThrows(
             IllegalArgumentException.class,
             () -> { serializer.floatToByteArray(input, oversized, dim); }
         );
-        assertEquals("Output buffer size mismatch. Must be 2x dimension.", e2.getMessage());
+        assertTrue(e2.getMessage().contains("Output buffer size mismatch"));
+        assertTrue(e2.getMessage().contains("output.length=65"));
+        assertTrue(e2.getMessage().contains("dimension=32"));
     }
 
     public void testFloatToByteArray_dimensionSmallerThanInput_allowsOutputSizedToDimension() {
@@ -270,7 +275,7 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializerTests extends KNNTestCas
     private float[] getArrayOfRandomFloats(int length) {
         float[] vector = new float[length];
         for (int i = 0; i < length; i++) {
-            vector[i] = random.nextFloat() * 200 - 100; // Range: [-100, 100]
+            vector[i] = random().nextFloat() * 200 - 100; // Range: [-100, 100]
         }
         return vector;
     }

@@ -81,10 +81,15 @@ public class SimdVectorComputeService {
      * @param fp16Vectors            FP16-encoded vector bytes, `numVectors` vectors packed contiguously
      *                               (2 * dimension bytes per vector, little-endian)
      * @param numVectors             Number of vectors packed in `fp16Vectors`
-     * @param internalVectorIds      Positional ids of the packed vectors. Callers build this once and 
+     * @param internalVectorIds      Positional ids of the packed vectors. Callers build this once and
      *                               reuse/grow it across calls to avoid reallocating it on every native call.
      * @param scores                 Output array to fill with `numVectors` similarity scores
      * @return The maximum of the computed scores.
      */
-    public native static float scoreSimilarityInBulkFromBytes(byte[] fp16Vectors, int numVectors, int[] internalVectorIds, float[] scores);
+    public native static float scoreSimilarityInBulkFromFp16Bytes(
+        byte[] fp16Vectors,
+        int numVectors,
+        int[] internalVectorIds,
+        float[] scores
+    );
 }
