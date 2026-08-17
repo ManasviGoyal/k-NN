@@ -96,16 +96,12 @@ class KNN1040HalfFloatFlatVectorsValues extends FloatVectorValues implements Has
         return ordToDocReader == null ? ord : (int) ordToDocReader.get(ord);
     }
 
-    // TODO temporary diagnostic - remove after KNN1040HalfFloatMergeCallCountTests confirms decode counts
-    static final java.util.concurrent.atomic.AtomicLong DIAGNOSTIC_DECODE_CALLS = new java.util.concurrent.atomic.AtomicLong();
-
     @Override
     public float[] vectorValue(int ord) throws IOException {
         if (ord == lastOrd) {
             return value;
         }
         lastOrd = ord;
-        DIAGNOSTIC_DECODE_CALLS.incrementAndGet();
         readRawVectorBytes(ord, rawBytes, 0);
         KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.byteToFloatArray(rawBytes, value, dimension, 0);
         return value;

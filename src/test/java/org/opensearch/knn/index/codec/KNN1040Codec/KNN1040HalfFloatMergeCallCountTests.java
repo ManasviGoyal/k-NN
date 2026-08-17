@@ -8,7 +8,6 @@ package org.opensearch.knn.index.codec.KNN1040Codec;
 import lombok.SneakyThrows;
 import lombok.extern.log4j.Log4j2;
 import org.apache.lucene.codecs.hnsw.DefaultFlatVectorScorer;
-import org.apache.lucene.codecs.hnsw.FlatVectorsScorer;
 import org.apache.lucene.index.VectorSimilarityFunction;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
@@ -25,19 +24,15 @@ import java.util.Random;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Characterizes how many times each merge-time scorer tier actually crosses into native code
- * (JNI) while building a real HNSW graph, using Lucene's own {@link HnswGraphBuilder} directly
- * against real, valid FP16 data - not mocked or faked, so it's safe to let the real native SIMD
- * library run (unlike mocking {@code SimdVectorComputeService} itself, which crashed with a real
+ * Regression guard for merge-time HNSW graph construction over real, valid FP16 data, using Lucene's
+ * own {@link HnswGraphBuilder} directly - no OpenSearch cluster needed, and safe to let the real
+ * native SIMD decode run (unlike mocking {@code SimdVectorComputeService}, which crashed with a real
  * SIGSEGV in {@code KNN1040HalfFloatVectorScorerTests} when given fake addresses).
  *
- * <p>Every {@code score()}/{@code bulkScore()} call on our native tier's scorer is exactly one
- * JNI crossing (bulk batches all their candidates into a single native call). Every candidate
- * scored via {@link DefaultFlatVectorScorer}'s fallback triggers its own
- * {@code KNN1040HalfFloatFlatVectorsValues#vectorValue} call, which is its own native SIMD decode
- * crossing - no batching, since {@code DefaultFlatVectorScorer.FloatScoringSupplier} never
- * overrides {@code bulkScore} (confirmed by reading Lucene 10.5.0's actual source). This test
- * counts both directly, rather than reasoning about which should be lower.
+ * <p>{@link KNN1040HalfFloatVectorScorer#getRandomVectorScorerSupplier} previously routed merge through
+ * a native SIMD scorer supplier that was measured ~10x slower than {@link DefaultFlatVectorScorer} -
+ * {@code saveSearchContext} rebuilt a whole Faiss distance computer on every graph node instead of
+ * reusing one across candidates. The timing assertion here guards against that regressing back in.
  */
 @Log4j2
 public class KNN1040HalfFloatMergeCallCountTests extends KNNTestCase {
@@ -46,40 +41,32 @@ public class KNN1040HalfFloatMergeCallCountTests extends KNNTestCase {
     private static final int DIMENSION = 64;
     private static final int M = 16;
     private static final int BEAM_WIDTH = 100;
+    // Generous headroom over the ~50ms this build actually takes, to absorb CI/JIT variance while
+    // still catching a regression back to the native tier's ~400ms+.
+    private static final double MAX_AVG_MILLIS = 200.0;
 
     @SneakyThrows
-    public void testCallCounts_nativeTierVsDefaultFlatVectorScorer() {
+    public void testMergeGraphBuild_usesDefaultFlatVectorScorer_andStaysFast() {
         final Directory dir = new ByteBuffersDirectory();
         writeRandomHalfFloatVectors(dir, "vectors", NUM_VECTORS, DIMENSION);
 
-        log.info("[fp16-merge-call-count] SimdFp16.isSIMDSupported()={}", org.opensearch.knn.jni.SimdFp16.isSIMDSupported());
-        final CallCounts nativeCounts = buildGraphAndCountCalls(dir, true);
-        final CallCounts fallbackCounts = buildGraphAndCountCalls(dir, false);
+        final CallCounts counts = buildGraphAndCountCalls(dir);
 
         log.info(
-            "[fp16-merge-call-count] native tier: bulkScoreCalls={} totalCandidatesScored={} "
-                + "setScoringOrdinalCalls={} decodeCalls={} avgMillis={} minMillis={}",
-            nativeCounts.bulkScoreCalls.get(),
-            nativeCounts.totalCandidatesScored.get(),
-            nativeCounts.setScoringOrdinalCalls.get(),
-            nativeCounts.decodeCalls.get(),
-            nativeCounts.avgMillis,
-            nativeCounts.minMillis
-        );
-        log.info(
-            "[fp16-merge-call-count] DefaultFlatVectorScorer fallback: bulkScoreCalls={} totalCandidatesScored={} "
-                + "setScoringOrdinalCalls={} decodeCalls={} avgMillis={} minMillis={}",
-            fallbackCounts.bulkScoreCalls.get(),
-            fallbackCounts.totalCandidatesScored.get(),
-            fallbackCounts.setScoringOrdinalCalls.get(),
-            fallbackCounts.decodeCalls.get(),
-            fallbackCounts.avgMillis,
-            fallbackCounts.minMillis
+            "[fp16-merge-call-count] bulkScoreCalls={} totalCandidatesScored={} setScoringOrdinalCalls={} avgMillis={} minMillis={}",
+            counts.bulkScoreCalls.get(),
+            counts.totalCandidatesScored.get(),
+            counts.setScoringOrdinalCalls.get(),
+            counts.avgMillis,
+            counts.minMillis
         );
 
-        // Both tiers must score the same number of candidates overall - only how many native
-        // crossings that took should differ.
-        assertEquals(fallbackCounts.totalCandidatesScored.get(), nativeCounts.totalCandidatesScored.get());
+        assertTrue("graph build should have scored candidates", counts.totalCandidatesScored.get() > 0);
+        assertTrue("graph build should have set a scoring ordinal at least once", counts.setScoringOrdinalCalls.get() > 0);
+        assertTrue(
+            "merge graph build averaged " + counts.avgMillis + "ms, expected under " + MAX_AVG_MILLIS + "ms",
+            counts.avgMillis < MAX_AVG_MILLIS
+        );
 
         dir.close();
     }
@@ -88,7 +75,7 @@ public class KNN1040HalfFloatMergeCallCountTests extends KNNTestCase {
     private static final int TIMED_ITERATIONS = 3;
 
     @SneakyThrows
-    private CallCounts buildGraphAndCountCalls(Directory dir, boolean useNativeTier) {
+    private CallCounts buildGraphAndCountCalls(Directory dir) {
         CallCounts counts = null;
         final long[] elapsedNanosPerRun = new long[TIMED_ITERATIONS];
 
@@ -104,9 +91,7 @@ public class KNN1040HalfFloatMergeCallCountTests extends KNNTestCase {
             );
 
             counts = new CallCounts();
-            final FlatVectorsScorer flatVectorsScorer = useNativeTier
-                ? new KNN1040HalfFloatVectorScorer(DefaultFlatVectorScorer.INSTANCE)
-                : DefaultFlatVectorScorer.INSTANCE;
+            final KNN1040HalfFloatVectorScorer flatVectorsScorer = new KNN1040HalfFloatVectorScorer(DefaultFlatVectorScorer.INSTANCE);
 
             final RandomVectorScorerSupplier realSupplier = flatVectorsScorer.getRandomVectorScorerSupplier(
                 VectorSimilarityFunction.EUCLIDEAN,
@@ -114,11 +99,9 @@ public class KNN1040HalfFloatMergeCallCountTests extends KNNTestCase {
             );
             final RandomVectorScorerSupplier countingSupplier = new CountingSupplier(realSupplier, counts, values);
 
-            KNN1040HalfFloatFlatVectorsValues.DIAGNOSTIC_DECODE_CALLS.set(0);
             final long start = System.nanoTime();
             HnswGraphBuilder.create(countingSupplier, M, BEAM_WIDTH, 42).build(NUM_VECTORS);
             final long elapsed = System.nanoTime() - start;
-            counts.decodeCalls.set(KNN1040HalfFloatFlatVectorsValues.DIAGNOSTIC_DECODE_CALLS.get());
             slice.close();
 
             if (iteration >= WARMUP_ITERATIONS) {
@@ -156,22 +139,13 @@ public class KNN1040HalfFloatMergeCallCountTests extends KNNTestCase {
         final AtomicLong bulkScoreCalls = new AtomicLong();
         final AtomicLong totalCandidatesScored = new AtomicLong();
         final AtomicLong setScoringOrdinalCalls = new AtomicLong();
-        final AtomicLong decodeCalls = new AtomicLong();
         double avgMillis;
         double minMillis;
     }
 
     /**
-     * Wraps a real {@link RandomVectorScorerSupplier}, counting scorer-method invocations without
-     * mocking or altering any native call itself - every delegate call is real.
-     *
-     * <p>{@code score()}/{@code setScoringOrdinal()} calls double as decode-crossing counts: for
-     * {@link DefaultFlatVectorScorer}, {@code score(node)} calls
-     * {@code KNN1040HalfFloatFlatVectorsValues#vectorValue} on the candidate directly (one native
-     * decode per candidate, confirmed by reading Lucene's actual source - it never overrides
-     * {@code bulkScore}), and {@code setScoringOrdinal} decodes the "current" node the same way.
-     * For our native tier, only {@code setScoringOrdinal} decodes anything (the "current" node);
-     * candidates are read as raw bytes and never decoded in Java at all.
+     * Wraps the real {@link RandomVectorScorerSupplier}, counting scorer-method invocations without
+     * mocking or altering any call itself.
      */
     private static final class CountingSupplier implements RandomVectorScorerSupplier {
         private final RandomVectorScorerSupplier delegate;
