@@ -96,12 +96,16 @@ class KNN1040HalfFloatFlatVectorsValues extends FloatVectorValues implements Has
         return ordToDocReader == null ? ord : (int) ordToDocReader.get(ord);
     }
 
+    // TODO temporary diagnostic - remove after KNN1040HalfFloatMergeCallCountTests confirms decode counts
+    static final java.util.concurrent.atomic.AtomicLong DIAGNOSTIC_DECODE_CALLS = new java.util.concurrent.atomic.AtomicLong();
+
     @Override
     public float[] vectorValue(int ord) throws IOException {
         if (ord == lastOrd) {
             return value;
         }
         lastOrd = ord;
+        DIAGNOSTIC_DECODE_CALLS.incrementAndGet();
         readRawVectorBytes(ord, rawBytes, 0);
         KNNVectorAsCollectionOfHalfFloatsSerializer.INSTANCE.byteToFloatArray(rawBytes, value, dimension, 0);
         return value;
@@ -192,7 +196,7 @@ class KNN1040HalfFloatFlatVectorsValues extends FloatVectorValues implements Has
         SimdVectorComputeService.SimilarityFunctionType nativeType = NativeEngines990KnnVectorsScorer.getNativeFunctionType(similarity);
         RandomVectorScorer.AbstractRandomVectorScorer scorer;
         if (nativeType != null && SimdFp16.isSIMDSupported()) {
-            scorer = new KNN1040HalfFloatVectorScorer.HalfFloatRandomVectorScorer(values, target, nativeType, null);
+            scorer = new KNN1040HalfFloatVectorScorer.HalfFloatRandomVectorScorer(values, target, nativeType);
         } else {
             scorer = new RandomVectorScorer.AbstractRandomVectorScorer(values) {
                 @Override
