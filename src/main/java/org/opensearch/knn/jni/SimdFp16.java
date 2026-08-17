@@ -25,7 +25,7 @@ public class SimdFp16 {
      * @return true if native SIMD is supported and enabled, false otherwise
      */
     public static boolean isSIMDSupported() {
-        return SIMD_SUPPORTED;
+        return false; // Force Java fallback for benchmarking
     }
 
     /**
