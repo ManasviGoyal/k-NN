@@ -141,18 +141,141 @@ struct ArmNeonFP16L2 final : BaseSimilarityFunction<BulkScoreTransformFunc, Scor
                                    int32_t* internalVectorIds,
                                    float* scores,
                                    const int32_t numVectors) {
-        // Prepare similarity calculation
-        auto func = dynamic_cast<faiss::ScalarQuantizer::SQDistanceComputer*>(srchContext->faissFunction.get());
-        knn_jni::util::ParameterCheck::require_non_null(
-            func, "Unexpected distance function acquired. Expected SQDistanceComputer, but it was something else");
+        // Bulk L2 with 4 batch, 16 dimensions per iteration (two 8-wide FP16 loads per
+        // vector instead of one) - trades more live registers per iteration for fewer
+        // loop iterations/less loop overhead versus the 8-dimension-batch variant.
+        int32_t processedCount = 0;
+        constexpr int32_t vecBlock = 4;
+        const uint8_t* vectors[vecBlock];
+        const auto* queryPtr = (const float*) srchContext->queryVectorSimdAligned;
+        const int32_t dim = srchContext->dimension;
+        constexpr int32_t dimensionBatch = 16;
 
-        for (int32_t i = 0 ; i < numVectors ; ++i) {
-            // Calculate distance
-            auto vector = reinterpret_cast<uint8_t*>(srchContext->getVectorPointer(internalVectorIds[i]));
-            scores[i] = func->query_to_code(vector);
+        for ( ; (processedCount + vecBlock) <= numVectors ; processedCount += vecBlock) {
+            srchContext->getVectorPointersInBulk((uint8_t**)vectors, &internalVectorIds[processedCount], vecBlock);
+
+            // Score accumulator per each vector
+            float32x4_t acc0 = vdupq_n_f32(0.0f);
+            float32x4_t acc1 = vdupq_n_f32(0.0f);
+            float32x4_t acc2 = vdupq_n_f32(0.0f);
+            float32x4_t acc3 = vdupq_n_f32(0.0f);
+
+            // Batch L2 for 16 values (two 8-wide FP16 loads per vector)
+            int32_t i = 0;
+            for (; i + dimensionBatch <= dim; i += dimensionBatch) {
+                // Load 16 FP32 query elements
+                float32x4_t q0 = vld1q_f32(queryPtr + i);
+                float32x4_t q1 = vld1q_f32(queryPtr + i + 4);
+                float32x4_t q2 = vld1q_f32(queryPtr + i + 8);
+                float32x4_t q3 = vld1q_f32(queryPtr + i + 12);
+
+                // Load 16 FP16 elements from each target (two 8-wide loads) and convert to FP32
+                float16x8_t h0a = vld1q_f16((const __fp16 *)(vectors[0] + i * 2));
+                float16x8_t h0b = vld1q_f16((const __fp16 *)(vectors[0] + (i + 8) * 2));
+                float16x8_t h1a = vld1q_f16((const __fp16 *)(vectors[1] + i * 2));
+                float16x8_t h1b = vld1q_f16((const __fp16 *)(vectors[1] + (i + 8) * 2));
+                float16x8_t h2a = vld1q_f16((const __fp16 *)(vectors[2] + i * 2));
+                float16x8_t h2b = vld1q_f16((const __fp16 *)(vectors[2] + (i + 8) * 2));
+                float16x8_t h3a = vld1q_f16((const __fp16 *)(vectors[3] + i * 2));
+                float16x8_t h3b = vld1q_f16((const __fp16 *)(vectors[3] + (i + 8) * 2));
+
+                float32x4_t d0_0 = vcvt_f32_f16(vget_low_f16(h0a));
+                float32x4_t d0_1 = vcvt_f32_f16(vget_high_f16(h0a));
+                float32x4_t d0_2 = vcvt_f32_f16(vget_low_f16(h0b));
+                float32x4_t d0_3 = vcvt_f32_f16(vget_high_f16(h0b));
+
+                float32x4_t d1_0 = vcvt_f32_f16(vget_low_f16(h1a));
+                float32x4_t d1_1 = vcvt_f32_f16(vget_high_f16(h1a));
+                float32x4_t d1_2 = vcvt_f32_f16(vget_low_f16(h1b));
+                float32x4_t d1_3 = vcvt_f32_f16(vget_high_f16(h1b));
+
+                float32x4_t d2_0 = vcvt_f32_f16(vget_low_f16(h2a));
+                float32x4_t d2_1 = vcvt_f32_f16(vget_high_f16(h2a));
+                float32x4_t d2_2 = vcvt_f32_f16(vget_low_f16(h2b));
+                float32x4_t d2_3 = vcvt_f32_f16(vget_high_f16(h2b));
+
+                float32x4_t d3_0 = vcvt_f32_f16(vget_low_f16(h3a));
+                float32x4_t d3_1 = vcvt_f32_f16(vget_high_f16(h3a));
+                float32x4_t d3_2 = vcvt_f32_f16(vget_low_f16(h3b));
+                float32x4_t d3_3 = vcvt_f32_f16(vget_high_f16(h3b));
+
+                // Post-load prefetch: next 16 elements
+                if (i + dimensionBatch < dim) {
+                    __builtin_prefetch(queryPtr + i + 16);
+                    __builtin_prefetch(vectors[0] + (i + 16) * 2);
+                    __builtin_prefetch(vectors[1] + (i + 16) * 2);
+                    __builtin_prefetch(vectors[2] + (i + 16) * 2);
+                    __builtin_prefetch(vectors[3] + (i + 16) * 2);
+                }
+
+                // L2: diff = q - d, then acc += diff * diff (one FMA per quarter)
+                float32x4_t diff0_0 = vsubq_f32(q0, d0_0); acc0 = vfmaq_f32(acc0, diff0_0, diff0_0);
+                float32x4_t diff0_1 = vsubq_f32(q1, d0_1); acc0 = vfmaq_f32(acc0, diff0_1, diff0_1);
+                float32x4_t diff0_2 = vsubq_f32(q2, d0_2); acc0 = vfmaq_f32(acc0, diff0_2, diff0_2);
+                float32x4_t diff0_3 = vsubq_f32(q3, d0_3); acc0 = vfmaq_f32(acc0, diff0_3, diff0_3);
+
+                float32x4_t diff1_0 = vsubq_f32(q0, d1_0); acc1 = vfmaq_f32(acc1, diff1_0, diff1_0);
+                float32x4_t diff1_1 = vsubq_f32(q1, d1_1); acc1 = vfmaq_f32(acc1, diff1_1, diff1_1);
+                float32x4_t diff1_2 = vsubq_f32(q2, d1_2); acc1 = vfmaq_f32(acc1, diff1_2, diff1_2);
+                float32x4_t diff1_3 = vsubq_f32(q3, d1_3); acc1 = vfmaq_f32(acc1, diff1_3, diff1_3);
+
+                float32x4_t diff2_0 = vsubq_f32(q0, d2_0); acc2 = vfmaq_f32(acc2, diff2_0, diff2_0);
+                float32x4_t diff2_1 = vsubq_f32(q1, d2_1); acc2 = vfmaq_f32(acc2, diff2_1, diff2_1);
+                float32x4_t diff2_2 = vsubq_f32(q2, d2_2); acc2 = vfmaq_f32(acc2, diff2_2, diff2_2);
+                float32x4_t diff2_3 = vsubq_f32(q3, d2_3); acc2 = vfmaq_f32(acc2, diff2_3, diff2_3);
+
+                float32x4_t diff3_0 = vsubq_f32(q0, d3_0); acc3 = vfmaq_f32(acc3, diff3_0, diff3_0);
+                float32x4_t diff3_1 = vsubq_f32(q1, d3_1); acc3 = vfmaq_f32(acc3, diff3_1, diff3_1);
+                float32x4_t diff3_2 = vsubq_f32(q2, d3_2); acc3 = vfmaq_f32(acc3, diff3_2, diff3_2);
+                float32x4_t diff3_3 = vsubq_f32(q3, d3_3); acc3 = vfmaq_f32(acc3, diff3_3, diff3_3);
+            }
+
+            // Horizontal sum
+            scores[processedCount] = vaddvq_f32(acc0);
+            scores[processedCount + 1] = vaddvq_f32(acc1);
+            scores[processedCount + 2] = vaddvq_f32(acc2);
+            scores[processedCount + 3] = vaddvq_f32(acc3);
+
+            // Scalar tail.
+            for (; i < dim; i++) {
+                __fp16 h0 = *((const __fp16 *)(vectors[0] + i * 2));
+                __fp16 h1 = *((const __fp16 *)(vectors[1] + i * 2));
+                __fp16 h2 = *((const __fp16 *)(vectors[2] + i * 2));
+                __fp16 h3 = *((const __fp16 *)(vectors[3] + i * 2));
+                const float qv = queryPtr[i];
+                float d0 = qv - (float)h0; scores[processedCount] += d0 * d0;
+                float d1 = qv - (float)h1; scores[processedCount + 1] += d1 * d1;
+                float d2 = qv - (float)h2; scores[processedCount + 2] += d2 * d2;
+                float d3 = qv - (float)h3; scores[processedCount + 3] += d3 * d3;
+            }
         }
 
-        // Transform score values if it needs to
+        // Tail loop for remaining vectors
+        for (; processedCount < numVectors; ++processedCount) {
+            const auto* vecPtr = (const __fp16*) srchContext->getVectorPointer(internalVectorIds[processedCount]);
+            float32x4_t acc = vdupq_n_f32(0.0f);
+            int32_t i = 0;
+            for (; i + 8 <= dim; i += 8) {
+                float32x4_t q0 = vld1q_f32(queryPtr + i);
+                float32x4_t q1 = vld1q_f32(queryPtr + i + 4);
+                float16x8_t h0 = vld1q_f16((const __fp16 *)(vecPtr + i));
+                float32x4_t d0_lo = vcvt_f32_f16(vget_low_f16(h0));
+                float32x4_t d0_hi = vcvt_f32_f16(vget_high_f16(h0));
+                float32x4_t diff_lo = vsubq_f32(q0, d0_lo);
+                float32x4_t diff_hi = vsubq_f32(q1, d0_hi);
+                acc = vfmaq_f32(acc, diff_lo, diff_lo);
+                acc = vfmaq_f32(acc, diff_hi, diff_hi);
+            }
+
+            float finalSum = vaddvq_f32(acc);
+            // Scalar tail for dimensions not divisible by 8
+            for (; i < dim; ++i) {
+                float d = queryPtr[i] - (float)vecPtr[i];
+                finalSum += d * d;
+            }
+            scores[processedCount] = finalSum;
+        }
+
         BulkScoreTransformFunc(scores, numVectors);
     }
 };
