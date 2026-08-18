@@ -180,13 +180,19 @@ struct ArmNeonFP16L2 final : BaseSimilarityFunction<BulkScoreTransformFunc, Scor
                 float32x4_t d3_lo = vcvt_f32_f16(vget_low_f16(h3));
                 float32x4_t d3_hi = vcvt_f32_f16(vget_high_f16(h3));
 
-                // Post-load prefetch: next 8 elements
-                if (i + dimensionBatch < dim) {
-                    __builtin_prefetch(queryPtr + i + 8);
-                    __builtin_prefetch(vectors[0] + (i + 8) * 2);
-                    __builtin_prefetch(vectors[1] + (i + 8) * 2);
-                    __builtin_prefetch(vectors[2] + (i + 8) * 2);
-                    __builtin_prefetch(vectors[3] + (i + 8) * 2);
+                // Post-load prefetch: v4 experiment - look 32 elements ahead (one 64-byte
+                // cache line of FP16 vector data) instead of v1's 8 (one iteration ahead).
+                // v1's distance leaves only ~8 FMA instructions between issuing the prefetch
+                // and consuming that data next iteration, likely too little time to hide a
+                // real cache-miss round-trip. Unverified until benchmarked - the CPU's own
+                // hardware prefetcher may already cover sequential access like this
+                // regardless of this hint.
+                if (i + 32 < dim) {
+                    __builtin_prefetch(queryPtr + i + 32);
+                    __builtin_prefetch(vectors[0] + (i + 32) * 2);
+                    __builtin_prefetch(vectors[1] + (i + 32) * 2);
+                    __builtin_prefetch(vectors[2] + (i + 32) * 2);
+                    __builtin_prefetch(vectors[3] + (i + 32) * 2);
                 }
 
                 // L2: diff = q - d, then acc += diff * diff (one FMA per half)
