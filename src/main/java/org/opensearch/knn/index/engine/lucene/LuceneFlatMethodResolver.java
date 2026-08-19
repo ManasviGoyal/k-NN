@@ -101,15 +101,15 @@ public class LuceneFlatMethodResolver extends AbstractMethodResolver {
             if (isValid == false) {
                 ValidationException validationException = new ValidationException();
                 final String supportedCompressionLevels = isHalfFloat
-                    ? String.format(Locale.ROOT, "\"%s\" or \"%s\"", DEFAULT_COMPRESSION_HALF_FLOAT.getName(), CompressionLevel.x32.getName())
+                    ? String.format(
+                        Locale.ROOT,
+                        "\"%s\" or \"%s\"",
+                        DEFAULT_COMPRESSION_HALF_FLOAT.getName(),
+                        CompressionLevel.x32.getName()
+                    )
                     : String.format(Locale.ROOT, "\"%s\"", defaultCompression.getName());
                 validationException.addValidationError(
-                    String.format(
-                        Locale.ROOT,
-                        "\"%s\" method only supports %s compression",
-                        METHOD_FLAT,
-                        supportedCompressionLevels
-                    )
+                    String.format(Locale.ROOT, "\"%s\" method only supports %s compression", METHOD_FLAT, supportedCompressionLevels)
                 );
                 throw validationException;
             }

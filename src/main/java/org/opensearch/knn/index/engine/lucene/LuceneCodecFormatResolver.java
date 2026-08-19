@@ -67,7 +67,15 @@ public class LuceneCodecFormatResolver implements CodecFormatResolver {
         int defaultBeamWidth,
         VectorDataType vectorDataType
     ) {
-        return resolve(field, methodContext, params, defaultMaxConnections, defaultBeamWidth, vectorDataType, CompressionLevel.NOT_CONFIGURED);
+        return resolve(
+            field,
+            methodContext,
+            params,
+            defaultMaxConnections,
+            defaultBeamWidth,
+            vectorDataType,
+            CompressionLevel.NOT_CONFIGURED
+        );
     }
 
     @Override

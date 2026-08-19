@@ -8,6 +8,7 @@ package org.opensearch.knn.index.engine.lucene;
 import org.opensearch.Version;
 import org.opensearch.common.ValidationException;
 import org.opensearch.knn.index.SpaceType;
+import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.engine.AbstractMethodResolver;
 import org.opensearch.knn.index.engine.Encoder;
 import org.opensearch.knn.index.engine.KNNEngine;
@@ -78,6 +79,28 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
             .knnMethodContext(resolvedKNNMethodContext)
             .compressionLevel(resolvedCompressionLevel)
             .build();
+    }
+
+    // AbstractMethodResolver.shouldEncoderBeResolved() only auto-resolves an encoder for FLOAT. Lucene
+    // HNSW also supports SQ 1-bit for HALF_FLOAT (x32 only), so widen just that data-type check here
+    // rather than in the shared base class, which Faiss's resolver also uses.
+    @Override
+    protected boolean shouldEncoderBeResolved(KNNMethodContext knnMethodContext, KNNMethodConfigContext knnMethodConfigContext) {
+        if (isEncoderSpecified(knnMethodContext)) {
+            return false;
+        }
+
+        if (knnMethodConfigContext.getCompressionLevel() == CompressionLevel.x1) {
+            return false;
+        }
+
+        if (CompressionLevel.isConfigured(knnMethodConfigContext.getCompressionLevel()) == false
+            && Mode.ON_DISK != knnMethodConfigContext.getMode()) {
+            return false;
+        }
+
+        VectorDataType vectorDataType = knnMethodConfigContext.getVectorDataType();
+        return vectorDataType == VectorDataType.FLOAT || vectorDataType == VectorDataType.HALF_FLOAT;
     }
 
     protected void resolveEncoder(KNNMethodContext resolvedKNNMethodContext, KNNMethodConfigContext knnMethodConfigContext) {
@@ -220,6 +243,21 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
 
         if (bitsObj instanceof Integer) {
             int bits = (Integer) bitsObj;
+
+            // half_float only supports the 1-bit path; bits=7 stays float-only.
+            if (configContext.getVectorDataType() == VectorDataType.HALF_FLOAT && bits != Bits.ONE.getValue()) {
+                validationException.addValidationError(
+                    String.format(
+                        Locale.ROOT,
+                        "[%s] data type only supports [%s=%d] for encoder [%s].",
+                        VectorDataType.HALF_FLOAT.getValue(),
+                        LUCENE_SQ_BITS,
+                        Bits.ONE.getValue(),
+                        ENCODER_SQ
+                    )
+                );
+                throw validationException;
+            }
 
             // bits=1 does not support other parameters
             if (bits == Bits.ONE.getValue()) {

@@ -489,6 +489,51 @@ public class LuceneHNSWMethodResolverTests extends KNNTestCase {
         );
     }
 
+    public void testResolveMethod_whenHalfFloatExplicitCompression32x_thenResolvesToSQOneBit() {
+        ResolvedMethodContext resolvedMethodContext = TEST_RESOLVER.resolveMethod(
+            null,
+            KNNMethodConfigContext.builder()
+                .vectorDataType(VectorDataType.HALF_FLOAT)
+                .compressionLevel(CompressionLevel.x32)
+                .versionCreated(Version.CURRENT)
+                .build(),
+            false,
+            SpaceType.L2
+        );
+        assertEquals(CompressionLevel.x32, resolvedMethodContext.getCompressionLevel());
+        assertEquals(
+            ENCODER_SQ,
+            ((MethodComponentContext) resolvedMethodContext.getKnnMethodContext()
+                .getMethodComponentContext()
+                .getParameters()
+                .get(METHOD_ENCODER_PARAMETER)).getName()
+        );
+        assertEquals(
+            1,
+            ((MethodComponentContext) resolvedMethodContext.getKnnMethodContext()
+                .getMethodComponentContext()
+                .getParameters()
+                .get(METHOD_ENCODER_PARAMETER)).getParameters().get(LUCENE_SQ_BITS)
+        );
+    }
+
+    // half_float only supports the SQ 1-bit path; x4 (bits=7) has no valid encoder to auto-resolve to.
+    public void testResolveMethod_whenHalfFloatExplicitCompression4x_thenThrows() {
+        expectThrows(
+            ValidationException.class,
+            () -> TEST_RESOLVER.resolveMethod(
+                null,
+                KNNMethodConfigContext.builder()
+                    .vectorDataType(VectorDataType.HALF_FLOAT)
+                    .compressionLevel(CompressionLevel.x4)
+                    .versionCreated(Version.CURRENT)
+                    .build(),
+                false,
+                SpaceType.L2
+            )
+        );
+    }
+
     public void testResolveMethod_whenExplicitCompression4x_thenResolvesToSQSevenBit() {
         ResolvedMethodContext resolvedMethodContext = TEST_RESOLVER.resolveMethod(
             null,
