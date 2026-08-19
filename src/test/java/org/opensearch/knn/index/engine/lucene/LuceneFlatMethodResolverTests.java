@@ -176,8 +176,8 @@ public class LuceneFlatMethodResolverTests extends KNNTestCase {
     }
 
     /**
-     * HALF_FLOAT must not inherit the x32 default: it does not go through SQ, and x32 combined with
-     * the flat method switches on a default rescore that cannot change an exhaustive FP16 ranking.
+     * HALF_FLOAT must not inherit the x32 default: absent an explicit choice, it stays on x2 (exact
+     * FP16 storage, no SQ, no rescore) rather than opting into SQ 1-bit implicitly.
      */
     public void testResolveMethod_whenFlatMethodWithHalfFloat_thenCompressionX2AndNoRescore() {
         KNNMethodContext flatMethodContext = new KNNMethodContext(
@@ -228,26 +228,54 @@ public class LuceneFlatMethodResolverTests extends KNNTestCase {
         assertEquals(CompressionLevel.x2, resolvedMethodContext.getCompressionLevel());
     }
 
-    /** x32 must stay rejected for HALF_FLOAT even when set explicitly, not just by default. */
-    public void testResolveMethod_whenFlatMethodWithHalfFloatAndExplicitX32_thenThrow() {
+    /**
+     * HALF_FLOAT may opt into x32 explicitly: SQ 1-bit with an FP16 (instead of FP32) rescoring copy,
+     * the same mechanism FLOAT's x32 uses.
+     */
+    public void testResolveMethod_whenFlatMethodWithHalfFloatAndExplicitX32_thenResolve() {
         KNNMethodContext flatMethodContext = new KNNMethodContext(
             KNNEngine.LUCENE,
             SpaceType.L2,
             new MethodComponentContext(METHOD_FLAT, Map.of())
         );
-        expectThrows(
-            ValidationException.class,
-            () -> TEST_RESOLVER.resolveMethod(
-                flatMethodContext,
-                KNNMethodConfigContext.builder()
-                    .vectorDataType(VectorDataType.HALF_FLOAT)
-                    .compressionLevel(CompressionLevel.x32)
-                    .versionCreated(Version.CURRENT)
-                    .build(),
-                false,
-                SpaceType.L2
-            )
+        ResolvedMethodContext resolvedMethodContext = TEST_RESOLVER.resolveMethod(
+            flatMethodContext,
+            KNNMethodConfigContext.builder()
+                .vectorDataType(VectorDataType.HALF_FLOAT)
+                .compressionLevel(CompressionLevel.x32)
+                .versionCreated(Version.CURRENT)
+                .build(),
+            false,
+            SpaceType.L2
         );
+        assertEquals(CompressionLevel.x32, resolvedMethodContext.getCompressionLevel());
+    }
+
+    /** Every compression level besides x2 (default) and x32 (opt-in SQ 1-bit) must still be rejected for HALF_FLOAT. */
+    public void testResolveMethod_whenFlatMethodWithHalfFloatAndUnsupportedCompression_thenThrow() {
+        for (CompressionLevel level : CompressionLevel.values()) {
+            if (level == CompressionLevel.x2 || level == CompressionLevel.x32 || level == CompressionLevel.NOT_CONFIGURED) {
+                continue;
+            }
+            KNNMethodContext flatMethodContext = new KNNMethodContext(
+                KNNEngine.LUCENE,
+                SpaceType.L2,
+                new MethodComponentContext(METHOD_FLAT, Map.of())
+            );
+            expectThrows(
+                ValidationException.class,
+                () -> TEST_RESOLVER.resolveMethod(
+                    flatMethodContext,
+                    KNNMethodConfigContext.builder()
+                        .vectorDataType(VectorDataType.HALF_FLOAT)
+                        .compressionLevel(level)
+                        .versionCreated(Version.CURRENT)
+                        .build(),
+                    false,
+                    SpaceType.L2
+                )
+            );
+        }
     }
 
     public void testResolveMethod_whenFlatMethodWithHalfFloatAndInnerProduct_thenResolve() {

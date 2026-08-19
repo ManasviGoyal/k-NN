@@ -2792,7 +2792,7 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
     }
 
     @SneakyThrows
-    public void testTypeParser_whenHalfFloatFlatWithExplicitX32Compression_thenThrow() {
+    public void testTypeParser_whenHalfFloatFlatWithExplicitX32Compression_thenSuccess() {
         String fieldName = "test-field-name";
         String indexName = "test-index-name";
 
@@ -2800,9 +2800,8 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
         ModelDao modelDao = mock(ModelDao.class);
         KNNVectorFieldMapper.TypeParser typeParser = new KNNVectorFieldMapper.TypeParser(() -> modelDao);
 
-        // half_float only ever resolves to 2x (its actual on-disk footprint); any other explicit
-        // compression value must still be rejected, just no longer by the mapper's blanket
-        // non-float check -- by LuceneFlatMethodResolver's per-data-type validation instead.
+        // half_float + flat may opt into x32 explicitly: SQ 1-bit with an FP16 (instead of FP32)
+        // rescoring copy, the same mechanism FLOAT's x32 uses.
         XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()
             .startObject()
             .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
@@ -2815,11 +2814,42 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
             .endObject()
             .endObject();
 
+        KNNVectorFieldMapper.Builder builder = (KNNVectorFieldMapper.Builder) typeParser.parse(
+            fieldName,
+            xContentBuilderToMap(xContentBuilder),
+            buildParserContext(indexName, settings)
+        );
+        assertNotNull(builder);
+    }
+
+    @SneakyThrows
+    public void testTypeParser_whenHalfFloatFlatWithUnsupportedCompression_thenThrow() {
+        String fieldName = "test-field-name";
+        String indexName = "test-index-name";
+
+        Settings settings = Settings.builder().put(settings(CURRENT).build()).put(KNN_INDEX, true).build();
+        ModelDao modelDao = mock(ModelDao.class);
+        KNNVectorFieldMapper.TypeParser typeParser = new KNNVectorFieldMapper.TypeParser(() -> modelDao);
+
+        // half_float only supports 2x (default) or 32x (opt-in SQ 1-bit); anything else must still be
+        // rejected, by LuceneFlatMethodResolver's per-data-type validation.
+        XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()
+            .startObject()
+            .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+            .field(DIMENSION_FIELD_NAME, TEST_DIMENSION)
+            .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+            .field(COMPRESSION_LEVEL_PARAMETER, CompressionLevel.x4.getName())
+            .startObject(KNN_METHOD)
+            .field(NAME, METHOD_FLAT)
+            .field(KNN_ENGINE, KNNEngine.LUCENE.getName())
+            .endObject()
+            .endObject();
+
         ValidationException exception = expectThrows(
             ValidationException.class,
             () -> typeParser.parse(fieldName, xContentBuilderToMap(xContentBuilder), buildParserContext(indexName, settings))
         );
-        assertTrue(exception.getMessage().contains("\"2x\" compression"));
+        assertTrue(exception.getMessage().contains("compression"));
     }
 
     @SneakyThrows

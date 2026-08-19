@@ -8,6 +8,7 @@ package org.opensearch.knn.index.codec;
 import lombok.Value;
 import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.engine.KNNMethodContext;
+import org.opensearch.knn.index.mapper.CompressionLevel;
 
 import java.util.Map;
 
@@ -61,4 +62,10 @@ public class KnnVectorsFormatContext {
      * The vector data type for the field (FLOAT, BYTE, BINARY, HALF_FLOAT).
      */
     VectorDataType vectorDataType;
+
+    /**
+     * Resolved compression level for the field (may be {@link CompressionLevel#NOT_CONFIGURED}).
+     * Used by the FLAT format factory to pick the correct scalar-quantization encoding.
+     */
+    CompressionLevel compressionLevel;
 }
