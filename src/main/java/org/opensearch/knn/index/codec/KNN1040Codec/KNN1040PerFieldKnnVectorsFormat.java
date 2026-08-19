@@ -27,6 +27,7 @@ import org.opensearch.knn.index.engine.KNNEngine;
 import org.opensearch.knn.index.engine.faiss.FaissCodecFormatResolver;
 import org.opensearch.knn.index.engine.lucene.LuceneCodecFormatResolver;
 import org.opensearch.knn.index.engine.lucene.LuceneSQEncoder;
+import org.opensearch.knn.index.mapper.CompressionLevel;
 
 import java.util.Map;
 import java.util.Optional;
@@ -126,6 +127,9 @@ public class KNN1040PerFieldKnnVectorsFormat extends KNN1040BasePerFieldKnnVecto
             );
         }, LuceneVectorsFormatType.FLAT, ctx -> {
             if (ctx.getVectorDataType() == VectorDataType.HALF_FLOAT) {
+                if (ctx.getCompressionLevel() == CompressionLevel.x32) {
+                    return new KNN1040HalfFloatScalarQuantizedVectorsFormat(ScalarEncoding.SINGLE_BIT_QUERY_NIBBLE);
+                }
                 return new KNN1040HalfFloatFlatVectorsFormat();
             }
             return new KNN1040ScalarQuantizedVectorsFormat(ScalarEncoding.SINGLE_BIT_QUERY_NIBBLE);

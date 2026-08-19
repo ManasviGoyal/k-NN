@@ -94,7 +94,15 @@ public abstract class KNN1040BasePerFieldKnnVectorsFormat extends PerFieldKnnVec
         final Map<String, Object> params = knnMethodContext.getMethodComponentContext().getParameters();
 
         if (engine == KNNEngine.LUCENE) {
-            return luceneFormatResolver.resolve(field, knnMethodContext, params, defaultMaxConnections, defaultBeamWidth, vectorDataType);
+            return luceneFormatResolver.resolve(
+                field,
+                knnMethodContext,
+                params,
+                defaultMaxConnections,
+                defaultBeamWidth,
+                vectorDataType,
+                knnMappingConfig.getCompressionLevel()
+            );
         }
 
         // Native engines — pass params so the resolver can detect SQ encoder

@@ -477,15 +477,12 @@ public abstract class KNNVectorFieldMapper extends ParametrizedFieldMapper {
                     String.format(Locale.ROOT, "Mode cannot be used for non-float32 data type for field %s", builder.name)
                 );
             }
-            // HALF_FLOAT always resolves to a fixed 2x compression (its actual on-disk footprint;
-            // see LuceneFlatMethodResolver), so an explicit "2x" is accepted here rather than
-            // rejected outright. Any other explicit value is still rejected downstream, in
-            // LuceneFlatMethodResolver, once the value reaches method resolution.
+
             if (builder.compressionLevel.isConfigured()
                 && vectorDataType != VectorDataType.FLOAT
                 && vectorDataType != VectorDataType.HALF_FLOAT) {
                 throw new MapperParsingException(
-                    String.format(Locale.ROOT, "Compression cannot be used for non-float32 data type for field %s", builder.name)
+                    String.format(Locale.ROOT, "Compression cannot be used for non-float data type for field %s", builder.name)
                 );
             }
 

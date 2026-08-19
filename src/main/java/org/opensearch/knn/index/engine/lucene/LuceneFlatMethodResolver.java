@@ -26,8 +26,10 @@ import static org.opensearch.knn.index.engine.lucene.LuceneFlatMethod.FLAT_METHO
 /**
  * Resolves method configuration for the Lucene flat method. For FLOAT vectors, the flat method uses SQ
  * (1-bit quantization) without an HNSW graph, supporting only {@link org.opensearch.knn.index.mapper.CompressionLevel#x32}
- * compression. HALF_FLOAT vectors do not go through SQ and default to {@link org.opensearch.knn.index.mapper.CompressionLevel#x2},
- * reflecting their actual on-disk footprint. Neither data type supports {@link org.opensearch.knn.index.mapper.Mode}.
+ * compression. HALF_FLOAT vectors default to {@link org.opensearch.knn.index.mapper.CompressionLevel#x2}
+ * (no SQ, exact FP16 storage, reflecting their actual on-disk footprint), but may also opt into
+ * {@link org.opensearch.knn.index.mapper.CompressionLevel#x32} for SQ 1-bit with an FP16 (instead of FP32)
+ * rescoring copy. Neither data type supports {@link org.opensearch.knn.index.mapper.Mode}.
  */
 public class LuceneFlatMethodResolver extends AbstractMethodResolver {
 
@@ -88,17 +90,26 @@ public class LuceneFlatMethodResolver extends AbstractMethodResolver {
     }
 
     private CompressionLevel validateAndResolveCompressionLevel(KNNMethodConfigContext knnMethodConfigContext) {
-        // HALF_FLOAT isn't SQ, so it gets its own default instead of x32's rescore-triggering one.
-        final CompressionLevel defaultCompression = VectorDataType.HALF_FLOAT == knnMethodConfigContext.getVectorDataType()
-            ? DEFAULT_COMPRESSION_HALF_FLOAT
-            : DEFAULT_COMPRESSION;
+        final boolean isHalfFloat = VectorDataType.HALF_FLOAT == knnMethodConfigContext.getVectorDataType();
+        // HALF_FLOAT isn't SQ by default, so it gets its own default instead of x32's rescore-triggering one.
+        final CompressionLevel defaultCompression = isHalfFloat ? DEFAULT_COMPRESSION_HALF_FLOAT : DEFAULT_COMPRESSION;
 
         CompressionLevel compressionLevel = knnMethodConfigContext.getCompressionLevel();
         if (CompressionLevel.isConfigured(compressionLevel)) {
-            if (compressionLevel != defaultCompression) {
+            // HALF_FLOAT may additionally opt into x32 (SQ 1-bit with an FP16 rescoring copy instead of FP32).
+            final boolean isValid = compressionLevel == defaultCompression || (isHalfFloat && compressionLevel == CompressionLevel.x32);
+            if (isValid == false) {
                 ValidationException validationException = new ValidationException();
+                final String supportedCompressionLevels = isHalfFloat
+                    ? String.format(Locale.ROOT, "\"%s\" or \"%s\"", DEFAULT_COMPRESSION_HALF_FLOAT.getName(), CompressionLevel.x32.getName())
+                    : String.format(Locale.ROOT, "\"%s\"", defaultCompression.getName());
                 validationException.addValidationError(
-                    String.format(Locale.ROOT, "\"%s\" method only supports \"%s\" compression", METHOD_FLAT, defaultCompression.getName())
+                    String.format(
+                        Locale.ROOT,
+                        "\"%s\" method only supports %s compression",
+                        METHOD_FLAT,
+                        supportedCompressionLevels
+                    )
                 );
                 throw validationException;
             }
