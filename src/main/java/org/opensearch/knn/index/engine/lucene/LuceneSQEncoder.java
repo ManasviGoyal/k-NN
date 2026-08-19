@@ -40,7 +40,7 @@ import static org.opensearch.knn.common.KNNConstants.MINIMUM_CONFIDENCE_INTERVAL
  * Lucene scalar quantization encoder
  */
 public class LuceneSQEncoder implements Encoder {
-    private static final Set<VectorDataType> SUPPORTED_DATA_TYPES = ImmutableSet.of(VectorDataType.FLOAT);
+    private static final Set<VectorDataType> SUPPORTED_DATA_TYPES = ImmutableSet.of(VectorDataType.FLOAT, VectorDataType.HALF_FLOAT);
     static final Set<Integer> LUCENE_SQ_BITS_SUPPORTED = Arrays.stream(Bits.values())
         .map(Bits::getValue)
         .collect(Collectors.toUnmodifiableSet());
@@ -135,6 +135,21 @@ public class LuceneSQEncoder implements Encoder {
         }
 
         if (bitsObj instanceof Integer bits) {
+            // half_float only supports the 1-bit path; bits=7 stays float-only.
+            if (configContext.getVectorDataType() == VectorDataType.HALF_FLOAT && bits != Bits.ONE.getValue()) {
+                validationException.addValidationError(
+                    String.format(
+                        Locale.ROOT,
+                        "[%s] data type only supports [%s=%d] for encoder [%s].",
+                        VectorDataType.HALF_FLOAT.getValue(),
+                        LUCENE_SQ_BITS,
+                        Bits.ONE.getValue(),
+                        ENCODER_SQ
+                    )
+                );
+                throw validationException;
+            }
+
             if (bits == Bits.ONE.getValue()) {
                 Set<String> nonBitParameters = encoderParams.keySet()
                     .stream()

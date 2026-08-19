@@ -106,6 +106,16 @@ public class KNN1040PerFieldKnnVectorsFormat extends KNN1040BasePerFieldKnnVecto
             final Tuple<Integer, ExecutorService> merge = getMergeThreadCountAndExecutorService();
             final int threshold = toTinySegmentsThreshold(ctx.getApproximateThreshold());
             if (p.getBits() == LuceneSQEncoder.Bits.ONE.getValue()) {
+                if (ctx.getVectorDataType() == VectorDataType.HALF_FLOAT) {
+                    return new KNN1040HnswHalfFloatScalarQuantizedVectorsFormat(
+                        p.getBitEncoding(),
+                        p.getMaxConnections(),
+                        p.getBeamWidth(),
+                        merge.v1(),
+                        merge.v2(),
+                        threshold
+                    );
+                }
                 return new KNN1040HnswScalarQuantizedVectorsFormat(
                     p.getBitEncoding(),
                     p.getMaxConnections(),

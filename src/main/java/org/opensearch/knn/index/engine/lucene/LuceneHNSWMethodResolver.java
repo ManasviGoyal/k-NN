@@ -18,9 +18,9 @@ import org.opensearch.knn.index.engine.MethodComponent;
 import org.opensearch.knn.index.engine.MethodComponentContext;
 import org.opensearch.knn.index.engine.ResolvedMethodContext;
 import org.opensearch.knn.index.mapper.CompressionLevel;
+import org.opensearch.knn.index.mapper.Mode;
 
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -34,10 +34,10 @@ import static org.opensearch.knn.index.engine.lucene.LuceneHNSWMethod.SUPPORTED_
 
 /**
  * Resolves method configuration for the Lucene HNSW method. Supports optional scalar quantization
- * encoding and compression-level-based resolution, with supported compression levels of x1, x4, and x32.
- * Currently, HALF_FLOAT vectors do not go through SQ and resolve to a fixed
- * {@link org.opensearch.knn.index.mapper.CompressionLevel#x2}, reflecting their actual on-disk footprint
- * (mirrors {@link LuceneFlatMethodResolver}).
+ * encoding and compression-level-based resolution, with supported compression levels of x1, x4, and x32
+ * for FLOAT. HALF_FLOAT vectors resolve to a fixed {@link org.opensearch.knn.index.mapper.CompressionLevel#x2}
+ * by default (plain FP16 graph, no SQ; mirrors {@link LuceneFlatMethodResolver}), or x32 (SQ 1-bit,
+ * {@code bits=1} only) when explicitly requested.
  */
 public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
 
@@ -81,6 +81,15 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
             .build();
     }
 
+    // half_float supports two compression levels on method:hnsw: x2 (plain FP16 graph, no SQ -
+    // the default, mirrors LuceneFlatMethodResolver) and x32 (SQ 1-bit, added here). Kept as a
+    // dedicated dispatch rather than folding into the general path above because its valid
+    // compression set ({x2, x32}) doesn't overlap with FLOAT's ({x1, x4, x32}) except at x32.
+    private static final Set<CompressionLevel> HALF_FLOAT_SUPPORTED_COMPRESSION_LEVELS = Set.of(
+        DEFAULT_COMPRESSION_HALF_FLOAT,
+        CompressionLevel.x32
+    );
+
     private ResolvedMethodContext resolveHalfFloatMethod(
         KNNMethodContext knnMethodContext,
         KNNMethodConfigContext knnMethodConfigContext,
@@ -88,20 +97,13 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
         SpaceType spaceType
     ) {
         ValidationException validationException = validateNotTrainingContext(shouldRequireTraining, KNNEngine.LUCENE, null);
+        validationException = validateCompressionSupported(
+            knnMethodConfigContext.getCompressionLevel(),
+            HALF_FLOAT_SUPPORTED_COMPRESSION_LEVELS,
+            KNNEngine.LUCENE,
+            validationException
+        );
         if (validationException != null) {
-            throw validationException;
-        }
-
-        CompressionLevel compressionLevel = knnMethodConfigContext.getCompressionLevel();
-        if (CompressionLevel.isConfigured(compressionLevel) && compressionLevel != DEFAULT_COMPRESSION_HALF_FLOAT) {
-            validationException = new ValidationException();
-            validationException.addValidationError(
-                String.format(
-                    Locale.ROOT,
-                    "\"%s\" is the only supported compression level for half_float vectors",
-                    DEFAULT_COMPRESSION_HALF_FLOAT.getName()
-                )
-            );
             throw validationException;
         }
 
@@ -111,12 +113,47 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
             spaceType,
             METHOD_HNSW
         );
+        resolveEncoder(resolvedKNNMethodContext, knnMethodConfigContext);
+        resolveEncoderBitsAndValidate(knnMethodContext, resolvedKNNMethodContext, knnMethodConfigContext);
         resolveMethodParams(resolvedKNNMethodContext.getMethodComponentContext(), knnMethodConfigContext, HNSW_METHOD_COMPONENT);
 
+        // resolveCompressionLevelFromMethodContext() falls back to x1 when no encoder was resolved
+        // (the plain-FLOAT convention) - half_float's equivalent "no SQ" default is x2, not x1.
+        CompressionLevel resolvedCompressionLevel = isEncoderSpecified(resolvedKNNMethodContext)
+            ? resolveCompressionLevelFromMethodContext(resolvedKNNMethodContext, knnMethodConfigContext, LuceneHNSWMethod.SUPPORTED_ENCODERS)
+            : DEFAULT_COMPRESSION_HALF_FLOAT;
+        validateCompressionConflicts(knnMethodConfigContext.getCompressionLevel(), resolvedCompressionLevel);
         return ResolvedMethodContext.builder()
             .knnMethodContext(resolvedKNNMethodContext)
-            .compressionLevel(DEFAULT_COMPRESSION_HALF_FLOAT)
+            .compressionLevel(resolvedCompressionLevel)
             .build();
+    }
+
+    // AbstractMethodResolver.shouldEncoderBeResolved() only auto-resolves an encoder for FLOAT. Lucene
+    // HNSW also supports SQ 1-bit for HALF_FLOAT, so widen just that data-type check here rather than
+    // in the shared base class, which Faiss's resolver also uses. half_float's own non-SQ default is
+    // x2 (not x1, like FLOAT), so it can't reuse the "anything but x1" shortcut below - it must check
+    // for x32 specifically, or x2 would incorrectly resolve an encoder too.
+    @Override
+    protected boolean shouldEncoderBeResolved(KNNMethodContext knnMethodContext, KNNMethodConfigContext knnMethodConfigContext) {
+        if (isEncoderSpecified(knnMethodContext)) {
+            return false;
+        }
+
+        if (knnMethodConfigContext.getVectorDataType() == VectorDataType.HALF_FLOAT) {
+            return knnMethodConfigContext.getCompressionLevel() == CompressionLevel.x32;
+        }
+
+        if (knnMethodConfigContext.getCompressionLevel() == CompressionLevel.x1) {
+            return false;
+        }
+
+        if (CompressionLevel.isConfigured(knnMethodConfigContext.getCompressionLevel()) == false
+            && Mode.ON_DISK != knnMethodConfigContext.getMode()) {
+            return false;
+        }
+
+        return knnMethodConfigContext.getVectorDataType() == VectorDataType.FLOAT;
     }
 
     protected void resolveEncoder(KNNMethodContext resolvedKNNMethodContext, KNNMethodConfigContext knnMethodConfigContext) {

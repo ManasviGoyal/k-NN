@@ -91,8 +91,7 @@ public class KNN1040ScalarQuantizedVectorsFormatTests extends KNNTestCase {
             SINGLE_BIT_QUERY_NIBBLE
         );
         assertNotEquals(
-            "FLOAT and HALF_FLOAT SQ 1-bit formats must have different names or read-time SPI "
-                + "reconstruction cannot tell them apart",
+            "FLOAT and HALF_FLOAT SQ 1-bit formats must have different names or read-time SPI " + "reconstruction cannot tell them apart",
             floatFormat.getName(),
             halfFloatFormat.getName()
         );
@@ -173,7 +172,7 @@ public class KNN1040ScalarQuantizedVectorsFormatTests extends KNNTestCase {
             ),
             halfFloatVecBytes < floatVecBytes
         );
- 
+
         assertTrue(
             "half_float .vec should be roughly half the FLOAT .vec size, not just smaller",
             halfFloatVecBytes < (floatVecBytes / 2) + 4096
