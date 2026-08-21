@@ -5,6 +5,8 @@
 
 package org.opensearch.knn.index.engine.lucene;
 
+import java.util.Locale;
+
 import lombok.extern.log4j.Log4j2;
 import org.apache.lucene.codecs.KnnVectorsFormat;
 import org.opensearch.common.Nullable;
@@ -15,6 +17,7 @@ import org.opensearch.knn.index.codec.KnnVectorsFormatContext;
 import org.opensearch.knn.index.codec.LuceneVectorsFormatType;
 import org.opensearch.knn.index.codec.params.KNNScalarQuantizedVectorsFormatParams;
 import org.opensearch.knn.index.engine.CodecFormatResolver;
+import org.opensearch.knn.index.engine.ResolvedIndexSpec;
 import org.opensearch.knn.index.engine.KNNMethodContext;
 
 import java.util.Map;
@@ -53,7 +56,7 @@ public class LuceneCodecFormatResolver implements CodecFormatResolver {
     @Override
     public KnnVectorsFormat resolve() {
         throw new UnsupportedOperationException(
-            String.format("%s requires field context, use resolve(field, ...) instead", getClass().getSimpleName())
+            String.format(Locale.ROOT, "%s requires field context, use resolve(field, ...) instead", getClass().getSimpleName())
         );
     }
 
@@ -64,6 +67,7 @@ public class LuceneCodecFormatResolver implements CodecFormatResolver {
         Map<String, Object> params,
         int defaultMaxConnections,
         int defaultBeamWidth,
+        ResolvedIndexSpec resolvedSpec,
         VectorDataType vectorDataType
     ) {
         LuceneVectorsFormatType formatType = determineFormatType(
@@ -76,7 +80,7 @@ public class LuceneCodecFormatResolver implements CodecFormatResolver {
         );
         Function<KnnVectorsFormatContext, KnnVectorsFormat> factory = formatResolvers.get(formatType);
         if (factory == null) {
-            throw new IllegalStateException(String.format("No Lucene vectors format registered for type [%s]", formatType));
+            throw new IllegalStateException(String.format(Locale.ROOT, "No Lucene vectors format registered for type [%s]", formatType));
         }
         final int approximateThreshold = KNNSettings.getApproximateThresholdValue(mapperService);
         return factory.apply(

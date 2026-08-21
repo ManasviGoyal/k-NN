@@ -195,7 +195,7 @@ public class LuceneFlatMethodResolverTests extends KNNTestCase {
         assertEquals(CompressionLevel.x2, resolvedMethodContext.getCompressionLevel());
         assertNull(
             "half_float flat must not default to a rescore pass",
-            resolvedMethodContext.getCompressionLevel().getDefaultRescoreContext(Mode.NOT_CONFIGURED, 8, Version.CURRENT, true, false)
+            resolvedMethodContext.getCompressionLevel().getDefaultRescoreContext()
         );
 
         // FLOAT keeps the existing x32 default and its rescore behaviour.

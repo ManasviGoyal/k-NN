@@ -17,6 +17,7 @@ import org.apache.lucene.search.TaskExecutor;
 import org.opensearch.knn.index.engine.KNNEngine;
 
 import java.io.IOException;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 
 import static org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsFormat.DEFAULT_BEAM_WIDTH;
@@ -105,6 +106,7 @@ public class KNN1040HnswHalfFloatVectorsFormat extends KnnVectorsFormat {
     @Override
     public String toString() {
         return String.format(
+            Locale.ROOT,
             "%s(maxConn=%d, beamWidth=%d, tinySegmentsThreshold=%d, flatVectorFormat=%s)",
             getClass().getSimpleName(),
             maxConn,

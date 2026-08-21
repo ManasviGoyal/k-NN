@@ -80,6 +80,7 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
             Collections.emptyMap(),
             DEFAULT_MAX_CONN,
             DEFAULT_BEAM_WIDTH,
+            null,
             VectorDataType.FLOAT
         );
         assertSame(FLAT_FORMAT, result);
@@ -106,6 +107,7 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
             Collections.emptyMap(),
             DEFAULT_MAX_CONN,
             DEFAULT_BEAM_WIDTH,
+            null,
             VectorDataType.HALF_FLOAT
         );
         assertSame(FLAT_FORMAT, result);
@@ -130,7 +132,15 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
         );
 
         LuceneCodecFormatResolver resolver = new LuceneCodecFormatResolver(resolvers, createMockMapperService());
-        KnnVectorsFormat result = resolver.resolve(TEST_FIELD, sqContext, params, DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, VectorDataType.FLOAT);
+        KnnVectorsFormat result = resolver.resolve(
+            TEST_FIELD,
+            sqContext,
+            params,
+            DEFAULT_MAX_CONN,
+            DEFAULT_BEAM_WIDTH,
+            null,
+            VectorDataType.FLOAT
+        );
         assertSame(SQ_FORMAT, result);
     }
 
@@ -154,6 +164,7 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
             params,
             DEFAULT_MAX_CONN,
             DEFAULT_BEAM_WIDTH,
+            null,
             VectorDataType.FLOAT
         );
         assertSame(HNSW_FORMAT, result);
@@ -181,6 +192,7 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
                 Collections.emptyMap(),
                 DEFAULT_MAX_CONN,
                 DEFAULT_BEAM_WIDTH,
+                null,
                 VectorDataType.FLOAT
             )
         );
@@ -210,7 +222,7 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
         );
 
         LuceneCodecFormatResolver resolver = new LuceneCodecFormatResolver(resolvers, createMockMapperService());
-        resolver.resolve(TEST_FIELD, methodContext, params, DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, VectorDataType.FLOAT);
+        resolver.resolve(TEST_FIELD, methodContext, params, DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, null, VectorDataType.FLOAT);
 
         assertNotNull(capturedContext[0]);
         assertEquals(TEST_FIELD, capturedContext[0].getField());
@@ -233,7 +245,15 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
         );
 
         LuceneCodecFormatResolver resolver = new LuceneCodecFormatResolver(resolvers, createMockMapperService());
-        KnnVectorsFormat result = resolver.resolve(TEST_FIELD, hnswContext, null, DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, VectorDataType.FLOAT);
+        KnnVectorsFormat result = resolver.resolve(
+            TEST_FIELD,
+            hnswContext,
+            null,
+            DEFAULT_MAX_CONN,
+            DEFAULT_BEAM_WIDTH,
+            null,
+            VectorDataType.FLOAT
+        );
         assertSame(HNSW_FORMAT, result);
     }
 
@@ -262,7 +282,15 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
         );
 
         LuceneCodecFormatResolver resolver = new LuceneCodecFormatResolver(resolvers, createMockMapperService());
-        KnnVectorsFormat result = resolver.resolve(TEST_FIELD, sqContext, params, DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, VectorDataType.FLOAT);
+        KnnVectorsFormat result = resolver.resolve(
+            TEST_FIELD,
+            sqContext,
+            params,
+            DEFAULT_MAX_CONN,
+            DEFAULT_BEAM_WIDTH,
+            null,
+            VectorDataType.FLOAT
+        );
         assertSame("SQ with bits=1 should route to SCALAR_QUANTIZED resolver", SQ_FORMAT, result);
     }
 
@@ -290,7 +318,7 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
         );
 
         LuceneCodecFormatResolver resolver = new LuceneCodecFormatResolver(resolvers, createMockMapperService());
-        resolver.resolve(TEST_FIELD, sqContext, params, DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, VectorDataType.FLOAT);
+        resolver.resolve(TEST_FIELD, sqContext, params, DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, null, VectorDataType.FLOAT);
 
         assertNotNull(capturedContext[0]);
         assertEquals(TEST_FIELD, capturedContext[0].getField());
@@ -316,7 +344,7 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
         );
 
         LuceneCodecFormatResolver resolver = new LuceneCodecFormatResolver(resolvers, createMockMapperService());
-        resolver.resolve(TEST_FIELD, hnswContext, Map.of(), DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, VectorDataType.FLOAT);
+        resolver.resolve(TEST_FIELD, hnswContext, Map.of(), DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, null, VectorDataType.FLOAT);
 
         assertNotNull(captured[0]);
         assertEquals(
@@ -348,7 +376,7 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
         );
 
         LuceneCodecFormatResolver resolver = new LuceneCodecFormatResolver(resolvers, mapperService);
-        resolver.resolve(TEST_FIELD, hnswContext, Map.of(), DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, VectorDataType.FLOAT);
+        resolver.resolve(TEST_FIELD, hnswContext, Map.of(), DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, null, VectorDataType.FLOAT);
 
         assertNotNull(captured[0]);
         assertEquals(
@@ -381,7 +409,7 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
         );
 
         LuceneCodecFormatResolver resolver = new LuceneCodecFormatResolver(resolvers, mapperService);
-        resolver.resolve(TEST_FIELD, hnswContext, Map.of(), DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, VectorDataType.FLOAT);
+        resolver.resolve(TEST_FIELD, hnswContext, Map.of(), DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, null, VectorDataType.FLOAT);
 
         assertNotNull(captured[0]);
         assertEquals(customThreshold, captured[0].getApproximateThreshold());
@@ -409,7 +437,7 @@ public class LuceneCodecFormatResolverTests extends KNNTestCase {
         );
 
         LuceneCodecFormatResolver resolver = new LuceneCodecFormatResolver(resolvers, mapperService);
-        resolver.resolve(TEST_FIELD, hnswContext, Map.of(), DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, VectorDataType.FLOAT);
+        resolver.resolve(TEST_FIELD, hnswContext, Map.of(), DEFAULT_MAX_CONN, DEFAULT_BEAM_WIDTH, null, VectorDataType.FLOAT);
 
         assertNotNull(captured[0]);
         assertEquals(-1, captured[0].getApproximateThreshold());

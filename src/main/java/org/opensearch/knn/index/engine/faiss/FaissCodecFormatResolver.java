@@ -15,6 +15,7 @@ import org.opensearch.knn.index.codec.KNN990Codec.NativeEngines990KnnVectorsForm
 import org.opensearch.knn.index.codec.nativeindex.NativeIndexBuildStrategyFactory;
 import org.opensearch.knn.index.engine.CodecFormatResolver;
 import org.opensearch.knn.index.engine.KNNMethodContext;
+import org.opensearch.knn.index.engine.ResolvedIndexSpec;
 
 import java.util.Map;
 
@@ -51,9 +52,10 @@ public class FaissCodecFormatResolver implements CodecFormatResolver {
         Map<String, Object> params,
         int defaultMaxConnections,
         int defaultBeamWidth,
+        ResolvedIndexSpec resolvedSpec,
         VectorDataType vectorDataType
     ) {
-        if (isSQOneBitEncoder(params)) {
+        if (resolvedSpec.isFaissSQOneBit()) {
             return new Faiss1040ScalarQuantizedKnnVectorsFormat(
                 KNNSettings.getApproximateThresholdValue(mapperService),
                 nativeIndexBuildStrategyFactory
@@ -66,9 +68,5 @@ public class FaissCodecFormatResolver implements CodecFormatResolver {
     public KnnVectorsFormat resolve() {
         final int approximateThreshold = KNNSettings.getApproximateThresholdValue(mapperService);
         return new NativeEngines990KnnVectorsFormat(approximateThreshold, nativeIndexBuildStrategyFactory);
-    }
-
-    private static boolean isSQOneBitEncoder(Map<String, Object> params) {
-        return FaissSQEncoder.isSQOneBit(params);
     }
 }

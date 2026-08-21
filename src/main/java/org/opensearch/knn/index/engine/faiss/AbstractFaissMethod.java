@@ -86,6 +86,10 @@ public abstract class AbstractFaissMethod extends AbstractKNNMethod {
             return PerDimensionProcessor.NOOP_PROCESSOR;
         }
 
+        if (VectorDataType.HALF_FLOAT == vectorDataType) {
+            return PerDimensionProcessor.NOOP_PROCESSOR;
+        }
+
         throw new IllegalStateException("Unsupported vector data type " + vectorDataType);
     }
 
