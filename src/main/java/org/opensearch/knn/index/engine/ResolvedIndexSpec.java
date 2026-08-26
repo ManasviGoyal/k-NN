@@ -98,6 +98,13 @@ public final class ResolvedIndexSpec {
      * (both Faiss and Lucene SQ 1-bit rely on it). The one exclusion is IVF: IVF-based SQ 1-bit
      * models (e.g. trained with on_disk/32x) produce IVF Faiss indices that the memory optimized
      * reader cannot load, so forcing memory optimized search for them would fail at query time.
+     *
+     * <p>Faiss HNSW {@code flat} + {@code half_float}, and the internal FP16 {@code .vec} dedup for
+     * FLOAT + {@code sq, bits:16}, both skip native flat storage <em>only when memory optimized search
+     * is already enabled for the index</em> (see {@code NativeIndexBuildStrategyFactory#isMemoryOptimizedSearchEnabled()}/
+     * {@code MemOptimizedNativeIndexBuildStrategy}) - not forced here, since indices running without MOS
+     * never have their storage skipped in the first place, and classic search has no reconstruction path
+     * for skipped storage yet.
      */
     public boolean alwaysUseMemoryOptimizedSearch() {
         return isSQOneBit() && METHOD_IVF.equals(methodName) == false;

@@ -39,6 +39,11 @@ public class BuildIndexParams {
     SegmentWriteState segmentWriteState;
     boolean isFlush;
     /**
+     * Whether memory-optimized search is enabled for this index right now - see
+     * {@link org.opensearch.knn.index.codec.nativeindex.NativeIndexBuildStrategyFactory#isMemoryOptimizedSearchEnabled()}.
+     */
+    boolean memoryOptimizedSearchEnabled;
+    /**
      * Optional quantized byte vector values for SQ (Binary Quantized) index building.
      * Provided by Faiss104ScalarQuantizedKnnVectorsWriter, null for non-SQ fields.
      */

@@ -58,7 +58,7 @@ import static org.opensearch.knn.common.KNNConstants.NAME;
  */
 public class FaissSQEncoder implements Encoder {
 
-    private static final Set<VectorDataType> SUPPORTED_DATA_TYPES = ImmutableSet.of(VectorDataType.FLOAT);
+    private static final Set<VectorDataType> SUPPORTED_DATA_TYPES = ImmutableSet.of(VectorDataType.FLOAT, VectorDataType.HALF_FLOAT);
     private static final Set<Integer> VALID_BITS = Set.of(QuantizationBits.ONE.getValue(), QuantizationBits.SIXTEEN.getValue());
 
     private final static MethodComponent METHOD_COMPONENT = MethodComponent.Builder.builder(ENCODER_SQ)
@@ -139,6 +139,26 @@ public class FaissSQEncoder implements Encoder {
         boolean hasClip = encoderParams.containsKey(FAISS_SQ_CLIP);
 
         ValidationException validationException = new ValidationException();
+
+        // half_float stays FLOAT-only for fp16 quantization (bits=16, and the legacy no-bits path that
+        // resolves to the same fp16 description) - that case is kept as an internal storage optimization
+        // on the existing FLOAT path rather than exposed as a half_float encoder option. bits=1 is fine.
+        boolean resolvesToFp16 = bitsObj == null
+            || (bitsObj instanceof Integer && (Integer) bitsObj == QuantizationBits.SIXTEEN.getValue());
+        if (configContext.getVectorDataType() == VectorDataType.HALF_FLOAT && resolvesToFp16) {
+            validationException.addValidationError(
+                String.format(
+                    Locale.ROOT,
+                    "half_float is not supported with fp16 quantization (%s=16, or no %s specified) for encoder [%s]. "
+                        + "Use %s=1, or the flat encoder, instead.",
+                    SQ_BITS,
+                    SQ_BITS,
+                    ENCODER_SQ,
+                    SQ_BITS
+                )
+            );
+            throw validationException;
+        }
 
         if (isV360OrLater && bitsObj == null && configContext.getVectorDataType() == VectorDataType.FLOAT) {
             validationException.addValidationError(

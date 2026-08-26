@@ -231,6 +231,7 @@ public class NativeIndexWriter {
             .segmentWriteState(state)
             .isFlush(isFlush)
             .quantizedByteVectorValues(quantizedByteVectorValues)
+            .memoryOptimizedSearchEnabled(indexBuilderFactory.isMemoryOptimizedSearchEnabled())
             .build();
     }
 

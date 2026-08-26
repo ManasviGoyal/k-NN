@@ -316,14 +316,11 @@ public class KNNMethodContextTests extends KNNTestCase {
         validateValidateVectorDataType(KNNEngine.LUCENE, KNNConstants.METHOD_HNSW, VectorDataType.HALF_FLOAT, SpaceType.L2, null);
     }
 
-    public void testValidateVectorDataType_whenHalfFloatFaiss_thenException() {
-        validateValidateVectorDataType(
-            KNNEngine.FAISS,
-            KNNConstants.METHOD_HNSW,
-            VectorDataType.HALF_FLOAT,
-            SpaceType.L2,
-            "UnsupportedMethod"
-        );
+    // half_float + Faiss HNSW with no encoder now resolves to the flat encoder, which supports
+    // half_float - see FaissFlatEncoder/FaissHNSWMethod.validate(). Faiss sq,16 (the one encoder that
+    // still rejects half_float) is exercised directly in FaissHNSWMethodTests/FaissSQEncoderTests.
+    public void testValidateVectorDataType_whenHalfFloatFaiss_thenValid() {
+        validateValidateVectorDataType(KNNEngine.FAISS, KNNConstants.METHOD_HNSW, VectorDataType.HALF_FLOAT, SpaceType.L2, null);
     }
 
     public void testWriteTo_withNullParameters() throws IOException {

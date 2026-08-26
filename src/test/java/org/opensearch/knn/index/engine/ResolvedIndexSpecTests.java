@@ -381,7 +381,8 @@ public class ResolvedIndexSpecTests extends KNNTestCase {
             baseFaissSQ1Bit().methodName(METHOD_IVF).build().alwaysUseMemoryOptimizedSearch()
         );
         assertFalse(
-            "SQ 16-bit should not always use memory optimized search",
+            "SQ 16-bit should not always use memory optimized search (storage-skip is gated on the live "
+                + "MOS setting instead - see NativeIndexBuildStrategyFactory#isMemoryOptimizedSearchEnabled())",
             baseFaiss().encoderType(Encoder.EncoderType.SQ)
                 .quantizationBits(Encoder.QuantizationBits.SIXTEEN)
                 .compressionLevel(CompressionLevel.x2)
@@ -389,6 +390,13 @@ public class ResolvedIndexSpecTests extends KNNTestCase {
                 .alwaysUseMemoryOptimizedSearch()
         );
         assertFalse("Flat encoder should not always use memory optimized search", baseFaiss().build().alwaysUseMemoryOptimizedSearch());
+        assertFalse(
+            "Flat encoder + half_float should not always use memory optimized search either, same reason",
+            baseFaiss().encoderType(Encoder.EncoderType.FLAT)
+                .vectorDataType(VectorDataType.HALF_FLOAT)
+                .build()
+                .alwaysUseMemoryOptimizedSearch()
+        );
     }
 
     // --- Coverage: isFaissSQOneBit is Faiss-only ---

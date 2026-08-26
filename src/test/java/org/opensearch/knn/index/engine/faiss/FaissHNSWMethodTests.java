@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.function.Function;
 
 import static org.opensearch.knn.common.KNNConstants.ENCODER_FLAT;
+import static org.opensearch.knn.common.KNNConstants.ENCODER_PARAMETER_PQ_M;
 import static org.opensearch.knn.common.KNNConstants.ENCODER_PQ;
 import static org.opensearch.knn.common.KNNConstants.ENCODER_SQ;
 import static org.opensearch.knn.common.KNNConstants.METHOD_ENCODER_PARAMETER;
@@ -37,8 +38,9 @@ import static org.opensearch.knn.common.KNNConstants.SQ_BITS;
 
 public class FaissHNSWMethodTests extends KNNTestCase {
 
-    // Faiss HNSW rejects HALF_FLOAT at the mapping-validation layer for now.
-    public void testValidate_whenHalfFloat_thenRejected() throws IOException {
+    // half_float + no encoder resolves to the flat encoder, which now supports half_float - no
+    // validation error expected (contrast with sq,16, which stays FLOAT-only - see FaissSQEncoderTests).
+    public void testValidate_whenHalfFloatWithNoEncoder_thenAccepted() throws IOException {
         KNNMethodConfigContext knnMethodConfigContext = KNNMethodConfigContext.builder()
             .versionCreated(Version.CURRENT)
             .dimension(10)
@@ -52,7 +54,67 @@ public class FaissHNSWMethodTests extends KNNTestCase {
             .endObject();
         KNNMethodContext knnMethodContext = KNNMethodContext.parse(xContentBuilderToMap(xContentBuilder));
 
+        assertNull(new FaissHNSWMethod().validate(knnMethodContext, knnMethodConfigContext));
+    }
+
+    public void testValidate_whenHalfFloatWithSqBits16Encoder_thenRejected() {
+        KNNMethodConfigContext knnMethodConfigContext = KNNMethodConfigContext.builder()
+            .versionCreated(Version.CURRENT)
+            .dimension(10)
+            .vectorDataType(VectorDataType.HALF_FLOAT)
+            .build();
+
+        KNNMethodContext knnMethodContext = new KNNMethodContext(
+            KNNEngine.FAISS,
+            SpaceType.L2,
+            new MethodComponentContext(
+                METHOD_HNSW,
+                Map.of(METHOD_ENCODER_PARAMETER, new MethodComponentContext(ENCODER_SQ, Map.of(SQ_BITS, 16)))
+            )
+        );
+
         assertNotNull(new FaissHNSWMethod().validate(knnMethodContext, knnMethodConfigContext));
+    }
+
+    public void testSupportedEncoders_pqEncoderAcceptsHalfFloat() {
+        Encoder pqEncoder = FaissHNSWMethod.SUPPORTED_ENCODERS.get(ENCODER_PQ);
+        KNNMethodConfigContext context = KNNMethodConfigContext.builder()
+            .versionCreated(Version.CURRENT)
+            .vectorDataType(VectorDataType.HALF_FLOAT)
+            .dimension(128)
+            .build();
+        MethodComponentContext mcc = new MethodComponentContext(ENCODER_PQ, Map.of(ENCODER_PARAMETER_PQ_M, 4));
+        assertNull(pqEncoder.getMethodComponent().validate(mcc, context));
+    }
+
+    public void testSupportedEncoders_binaryEncoderAcceptsHalfFloat() {
+        Encoder binaryEncoder = FaissHNSWMethod.SUPPORTED_ENCODERS.get(QFrameBitEncoder.NAME);
+        KNNMethodConfigContext context = KNNMethodConfigContext.builder()
+            .versionCreated(Version.CURRENT)
+            .vectorDataType(VectorDataType.HALF_FLOAT)
+            .dimension(128)
+            .build();
+        MethodComponentContext mcc = new MethodComponentContext(QFrameBitEncoder.NAME, Map.of());
+        assertNull(binaryEncoder.getMethodComponent().validate(mcc, context));
+    }
+
+    public void testValidate_whenHalfFloatWithSqBits1Encoder_thenAccepted() {
+        KNNMethodConfigContext knnMethodConfigContext = KNNMethodConfigContext.builder()
+            .versionCreated(Version.CURRENT)
+            .dimension(10)
+            .vectorDataType(VectorDataType.HALF_FLOAT)
+            .build();
+
+        KNNMethodContext knnMethodContext = new KNNMethodContext(
+            KNNEngine.FAISS,
+            SpaceType.L2,
+            new MethodComponentContext(
+                METHOD_HNSW,
+                Map.of(METHOD_ENCODER_PARAMETER, new MethodComponentContext(ENCODER_SQ, Map.of(SQ_BITS, 1)))
+            )
+        );
+
+        assertNull(new FaissHNSWMethod().validate(knnMethodContext, knnMethodConfigContext));
     }
 
     public void testSupportedEncoders_containsFlatSqPqAndQFrame() {

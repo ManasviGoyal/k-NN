@@ -7,8 +7,12 @@ package org.opensearch.knn.index.codec.nativeindex;
 
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
+import org.apache.lucene.index.FieldInfo;
+import org.opensearch.knn.common.FieldInfoExtractor;
+import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.codec.nativeindex.model.BuildIndexParams;
 import org.opensearch.knn.index.codec.transfer.OffHeapVectorTransfer;
+import org.opensearch.knn.index.engine.Encoder;
 import org.opensearch.knn.index.engine.KNNEngine;
 import org.opensearch.knn.index.vectorvalues.KNNVectorValues;
 import org.opensearch.knn.jni.JNIService;
@@ -121,8 +125,9 @@ final class MemOptimizedNativeIndexBuildStrategy implements NativeIndexBuildStra
             }
 
             // Write vector
+            final boolean skipFlat = shouldSkipFlatStorage(indexInfo);
             AccessController.doPrivileged((PrivilegedAction<Void>) () -> {
-                JNIService.writeIndex(indexInfo.getIndexOutputWithBuffer(), indexMemoryAddress, engine, indexParameters, false);
+                JNIService.writeIndex(indexInfo.getIndexOutputWithBuffer(), indexMemoryAddress, engine, indexParameters, skipFlat);
                 return null;
             });
 
@@ -134,5 +139,38 @@ final class MemOptimizedNativeIndexBuildStrategy implements NativeIndexBuildStra
                 exception
             );
         }
+    }
+
+    /**
+     * True for the two cases whose native flat storage is redundant with an equivalent FP16 Lucene
+     * {@code .vec} copy: {@code flat} + {@code half_float} (the field's own declared type), and FLOAT +
+     * {@code sq, bits:16} (an internal dedup optimization - Faiss's own ScalarQuantizer already stores
+     * this data as FP16 natively, so keeping the Lucene-side copy too would be a same-precision
+     * duplicate). {@code sq, bits:16} is detected via the {@code SQ_CONFIG} field attribute
+     * {@link org.opensearch.knn.index.mapper.FaissFieldStrategy} writes for it, the same mechanism
+     * already used to detect {@code sq, bits:1}.
+     *
+     * <p>Gated on memory-optimized search actually being enabled for this index right now - classic
+     * (non-MOS) search has no reconstruction path for skipped storage yet, so skipping is only safe
+     * when MOS will read it back. This is a live setting check rather than forcing MOS on, so indices
+     * running without MOS keep today's exact behavior (full native storage, no dedup) unchanged.
+     */
+    private static boolean shouldSkipFlatStorage(final BuildIndexParams indexInfo) {
+        if (indexInfo.isMemoryOptimizedSearchEnabled() == false) {
+            return false;
+        }
+        if (indexInfo.getVectorDataType() == VectorDataType.HALF_FLOAT) {
+            return true;
+        }
+        if (indexInfo.getSegmentWriteState() == null || indexInfo.getSegmentWriteState().fieldInfos == null) {
+            // No real segment context (e.g. some unit tests build BuildIndexParams/SegmentWriteState
+            // directly, without populating fieldInfos) - nothing to inspect for the sq,16 case, so fall
+            // back to not skipping rather than throw.
+            return false;
+        }
+        FieldInfo fieldInfo = indexInfo.getSegmentWriteState().fieldInfos.fieldInfo(indexInfo.getField());
+        return fieldInfo != null
+            && FieldInfoExtractor.isSQField(fieldInfo)
+            && FieldInfoExtractor.extractSQConfig(fieldInfo).getBits() == Encoder.QuantizationBits.SIXTEEN.getValue();
     }
 }

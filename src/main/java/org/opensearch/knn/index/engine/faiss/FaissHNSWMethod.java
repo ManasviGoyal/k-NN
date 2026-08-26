@@ -7,12 +7,14 @@ package org.opensearch.knn.index.engine.faiss;
 
 import com.google.common.collect.ImmutableSet;
 import lombok.extern.slf4j.Slf4j;
+import org.opensearch.common.ValidationException;
 import org.opensearch.knn.index.KNNSettings;
 import org.opensearch.knn.index.SpaceType;
 import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.engine.AbstractKNNMethod;
 import org.opensearch.knn.index.engine.DefaultHnswSearchContext;
 import org.opensearch.knn.index.engine.Encoder;
+import org.opensearch.knn.index.engine.KNNMethodConfigContext;
 import org.opensearch.knn.index.engine.KNNMethodContext;
 import org.opensearch.knn.index.engine.MethodComponent;
 import org.opensearch.knn.index.engine.MethodComponentContext;
@@ -31,6 +33,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static org.opensearch.knn.common.KNNConstants.ENCODER_FLAT;
+import static org.opensearch.knn.common.KNNConstants.ENCODER_SQ;
 import static org.opensearch.knn.common.KNNConstants.FAISS_HNSW_DESCRIPTION;
 import static org.opensearch.knn.common.KNNConstants.METHOD_ENCODER_PARAMETER;
 import static org.opensearch.knn.common.KNNConstants.METHOD_HNSW;
@@ -39,6 +42,7 @@ import static org.opensearch.knn.common.KNNConstants.METHOD_PARAMETER_EF_SEARCH;
 import static org.opensearch.knn.common.KNNConstants.METHOD_PARAMETER_M;
 import static org.opensearch.knn.common.KNNConstants.PARAMETERS;
 import static org.opensearch.knn.common.KNNConstants.SPACE_TYPE;
+import static org.opensearch.knn.common.KNNConstants.SQ_BITS;
 
 /**
  * Faiss HNSW method implementation
@@ -49,7 +53,8 @@ public class FaissHNSWMethod extends AbstractFaissMethod {
     private static final Set<VectorDataType> SUPPORTED_DATA_TYPES = ImmutableSet.of(
         VectorDataType.FLOAT,
         VectorDataType.BINARY,
-        VectorDataType.BYTE
+        VectorDataType.BYTE,
+        VectorDataType.HALF_FLOAT
     );
 
     public final static List<SpaceType> SUPPORTED_SPACES = Arrays.asList(
@@ -86,6 +91,36 @@ public class FaissHNSWMethod extends AbstractFaissMethod {
      */
     public FaissHNSWMethod() {
         super(HNSW_COMPONENT, Set.copyOf(SUPPORTED_SPACES), new DefaultHnswSearchContext());
+    }
+
+    /**
+     * {@code half_float} stays FLOAT-only for fp16 quantization (encoder: sq, bits: 16, and the legacy
+     * no-bits path that resolves to the same fp16 description) - kept as an internal storage
+     * optimization on the existing FLOAT path (see {@code FaissCodecFormatResolver}) rather than
+     * exposed as a half_float mapping option. {@code flat} and {@code sq, bits: 1} both do support
+     * half_float. This check only runs at direct mapping-validation time - {@link FaissSQEncoder}'s own
+     * {@code validate()} enforces the identical rule for the separate training-job validation path.
+     */
+    @Override
+    public ValidationException validate(KNNMethodContext knnMethodContext, KNNMethodConfigContext knnMethodConfigContext) {
+        if (knnMethodConfigContext.getVectorDataType() == VectorDataType.HALF_FLOAT && resolvesToSqFp16(knnMethodContext)) {
+            ValidationException validationException = new ValidationException();
+            validationException.addValidationError(
+                "half_float is not supported with fp16 quantization (encoder: sq, bits: 16, or no bits specified) for Faiss HNSW. "
+                    + "Use encoder: sq, bits: 1, or the flat encoder, instead."
+            );
+            return validationException;
+        }
+        return super.validate(knnMethodContext, knnMethodConfigContext);
+    }
+
+    private boolean resolvesToSqFp16(KNNMethodContext knnMethodContext) {
+        MethodComponentContext encoderContext = getEncoderComponentContext(knnMethodContext);
+        if (encoderContext == null || !ENCODER_SQ.equals(encoderContext.getName())) {
+            return false;
+        }
+        Object bitsObj = encoderContext.getParameters().get(SQ_BITS);
+        return bitsObj == null || (bitsObj instanceof Integer && (Integer) bitsObj == 16);
     }
 
     private static MethodComponent initMethodComponent() {

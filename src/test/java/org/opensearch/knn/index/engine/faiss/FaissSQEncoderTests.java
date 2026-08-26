@@ -342,6 +342,40 @@ public class FaissSQEncoderTests extends KNNTestCase {
         );
     }
 
+    // --- HALF_FLOAT: stays FLOAT-only for fp16 quantization (bits=16, or legacy no-bits), bits=1 is fine ---
+
+    public void testValidateDirectly_whenBits1WithHalfFloat_thenNoException() {
+        FaissSQEncoder encoder = new FaissSQEncoder();
+        encoder.validate(
+            buildMethodContext(Map.of(SQ_BITS, 1)),
+            buildConfigContext(Version.CURRENT, CompressionLevel.x32, VectorDataType.HALF_FLOAT)
+        );
+    }
+
+    public void testValidateDirectly_whenBits16WithHalfFloat_thenThrows() {
+        FaissSQEncoder encoder = new FaissSQEncoder();
+        ValidationException e = expectThrows(
+            ValidationException.class,
+            () -> encoder.validate(
+                buildMethodContext(Map.of(SQ_BITS, 16)),
+                buildConfigContext(Version.CURRENT, CompressionLevel.x2, VectorDataType.HALF_FLOAT)
+            )
+        );
+        assertTrue(e.getMessage().contains("half_float"));
+    }
+
+    public void testValidateDirectly_whenNoBitsWithHalfFloat_thenThrows() {
+        FaissSQEncoder encoder = new FaissSQEncoder();
+        ValidationException e = expectThrows(
+            ValidationException.class,
+            () -> encoder.validate(
+                buildMethodContext(Map.of()),
+                buildConfigContext(Version.CURRENT, CompressionLevel.NOT_CONFIGURED, VectorDataType.HALF_FLOAT)
+            )
+        );
+        assertTrue(e.getMessage().contains("half_float"));
+    }
+
     private KNNMethodContext buildMethodContext(Map<String, Object> encoderParams) {
         MethodComponentContext encoderCtx = new MethodComponentContext(ENCODER_SQ, new HashMap<>(encoderParams));
         return new KNNMethodContext(
@@ -352,9 +386,13 @@ public class FaissSQEncoderTests extends KNNTestCase {
     }
 
     private KNNMethodConfigContext buildConfigContext(Version version, CompressionLevel compressionLevel) {
+        return buildConfigContext(version, compressionLevel, VectorDataType.FLOAT);
+    }
+
+    private KNNMethodConfigContext buildConfigContext(Version version, CompressionLevel compressionLevel, VectorDataType vectorDataType) {
         return KNNMethodConfigContext.builder()
             .versionCreated(version)
-            .vectorDataType(VectorDataType.FLOAT)
+            .vectorDataType(vectorDataType)
             .dimension(128)
             .compressionLevel(compressionLevel)
             .build();

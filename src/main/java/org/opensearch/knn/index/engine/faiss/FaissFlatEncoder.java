@@ -26,7 +26,8 @@ public class FaissFlatEncoder implements Encoder {
     private static final Set<VectorDataType> SUPPORTED_DATA_TYPES = ImmutableSet.of(
         VectorDataType.FLOAT,
         VectorDataType.BYTE,
-        VectorDataType.BINARY
+        VectorDataType.BINARY,
+        VectorDataType.HALF_FLOAT
     );
 
     private final static MethodComponent METHOD_COMPONENT = MethodComponent.Builder.builder(KNNConstants.ENCODER_FLAT)

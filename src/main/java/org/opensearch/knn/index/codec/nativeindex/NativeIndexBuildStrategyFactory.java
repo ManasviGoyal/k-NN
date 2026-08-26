@@ -9,6 +9,7 @@ import lombok.Setter;
 import org.apache.lucene.index.FieldInfo;
 import org.opensearch.index.IndexSettings;
 import org.opensearch.knn.common.FieldInfoExtractor;
+import org.opensearch.knn.index.KNNSettings;
 import org.opensearch.knn.index.codec.nativeindex.remote.RemoteIndexBuildStrategy;
 import org.opensearch.knn.index.engine.Encoder;
 import org.opensearch.knn.index.engine.KNNEngine;
@@ -84,5 +85,16 @@ public final class NativeIndexBuildStrategyFactory {
         } else {
             return strategy;
         }
+    }
+
+    /**
+     * Whether memory-optimized search is enabled for this index right now. Used to gate native
+     * flat-storage skipping for the {@code sq,16}/{@code flat}+{@code half_float} dedup cases - skipping
+     * storage is only safe when MOS will actually read it back; classic search has no reconstruction
+     * path for it. {@code indexSettings} is {@code null} in some contexts (e.g. model training paths),
+     * in which case this conservatively returns {@code false}.
+     */
+    public boolean isMemoryOptimizedSearchEnabled() {
+        return indexSettings != null && indexSettings.getValue(KNNSettings.MEMORY_OPTIMIZED_KNN_SEARCH_MODE_SETTING);
     }
 }
