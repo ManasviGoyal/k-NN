@@ -134,7 +134,11 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
             .put("index.sort.field", sortFieldName)
             .put("index.sort.order", "desc")
             .build();
-        createKnnIndex(INDEX_NAME, settings, buildHalfFloatMappingWithSortField(sortFieldName));
+        // index.sort.field must see the sort field in the SAME request that creates the index -
+        // createKnnIndex() applies settings and mapping as two separate calls, so the sort field
+        // wouldn't exist yet when the setting is validated. createIndex() sends both atomically.
+        String mapping = buildHalfFloatMappingWithSortField(sortFieldName);
+        createIndex(INDEX_NAME, settings, mapping.substring(1, mapping.length() - 1));
 
         // addKnnDocWithAttributes refreshes per call, so each doc lands in its own segment and the
         // merge has several readers to interleave.
@@ -361,7 +365,7 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
         flushIndex(INDEX_NAME, true);
         addKnnDoc(INDEX_NAME, "2", FIELD_NAME, new Float[] { 5.0f, 6.0f, 7.0f, 8.0f });
         flushIndex(INDEX_NAME, true);
-        addKnnDoc(INDEX_NAME, "3", FIELD_NAME, new Float[] { 0.1f, 0.2f, 0.3f, 0.4f });
+        addKnnDoc(INDEX_NAME, "3", FIELD_NAME, new Float[] { 0.4f, 0.3f, 0.2f, 0.1f });
         flushIndex(INDEX_NAME, true);
 
         forceMergeKnnIndex(INDEX_NAME, 1);
