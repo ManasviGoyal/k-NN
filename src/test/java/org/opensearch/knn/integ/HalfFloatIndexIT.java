@@ -383,7 +383,8 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
             .put("index.sort.field", sortFieldName)
             .put("index.sort.order", "desc")
             .build();
-        createKnnIndex(INDEX_NAME, settings, buildHalfFloatSq1BitMappingWithSortField(sortFieldName));
+        String mapping = buildHalfFloatSq1BitMappingWithSortField(sortFieldName);
+        createIndex(INDEX_NAME, settings, mapping.substring(1, mapping.length() - 1));
 
         Float[][] vectors = {
             { 1.0f, 2.0f, 3.0f, 4.0f },
@@ -576,7 +577,8 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
             .put("index.sort.field", sortFieldName)
             .put("index.sort.order", "desc")
             .build();
-        createKnnIndex(INDEX_NAME, settings, buildHalfFloatHnswSq1BitMappingWithSortField(sortFieldName));
+        String mapping = buildHalfFloatHnswSq1BitMappingWithSortField(sortFieldName);
+        createIndex(INDEX_NAME, settings, mapping.substring(1, mapping.length() - 1));
 
         Float[][] vectors = {
             { 1.0f, 2.0f, 3.0f, 4.0f },
