@@ -5,6 +5,7 @@
 
 package org.opensearch.knn.index.codec.KNN1040Codec;
 
+import lombok.extern.log4j.Log4j2;
 import org.apache.lucene.codecs.hnsw.FlatVectorsScorer;
 import org.apache.lucene.codecs.lucene95.HasIndexSlice;
 import org.apache.lucene.index.FloatVectorValues;
@@ -29,12 +30,13 @@ import java.io.IOException;
  *
  * Implements {@link HasIndexSlice} so that {@link org.opensearch.knn.memoryoptsearch.faiss.MMapFloatVectorValues}
  * can expose the underlying slice for I/O prefetching. Callers must not hand an instance of this
- * class directly to Lucene's own flat vector scorer factory ({@code Lucene99FlatVectorsScorer}):
+ * class directly to Lucene's own flat vector scorer factoryß ({@code Lucene99FlatVectorsScorer}):
  * that factory independently detects {@code HasIndexSlice} and reads the raw slice assuming
  * 4 bytes/dimension (float32), which silently overreads past the buffer on this FP16 (2 bytes/dimension)
  * data. Use {@link #selectFallbackScorer(KNN1040HalfFloatFlatVectorsValues, float[], VectorSimilarityFunction)}
  * instead whenever mmap addresses are unavailable, or the similarity function has no native SIMD type.
  */
+@Log4j2
 class KNN1040HalfFloatFlatVectorsValues extends FloatVectorValues implements HasIndexSlice {
     private final int dimension;
     private final int size;
@@ -124,11 +126,13 @@ class KNN1040HalfFloatFlatVectorsValues extends FloatVectorValues implements Has
     @Override
     public VectorScorer scorer(float[] target) throws IOException {
         if (size() == 0) {
+            log.debug("No vectors present; returning null scorer from scorer(float[])");
             return null;
         }
         KNN1040HalfFloatFlatVectorsValues copy = copy();
         DocIndexIterator iterator = copy.iterator();
         RandomVectorScorer scorer = selectScorer(copy, target, similarity);
+        log.debug("Selected scorer [{}] for similarity [{}]", scorer.getClass().getSimpleName(), similarity);
         return new VectorScorer() {
             @Override
             public float score() throws IOException {
@@ -167,13 +171,10 @@ class KNN1040HalfFloatFlatVectorsValues extends FloatVectorValues implements Has
         );
         SimdVectorComputeService.SimilarityFunctionType nativeType = NativeEngines990KnnVectorsScorer.getNativeFunctionType(similarity);
         if (addressAndSize != null && nativeType != null) {
-            // Safe only with both mmap and a native type: the chain then builds
-            // NativeRandomVectorScorer directly and never reaches Lucene's delegate.
             MMapFloatVectorValues mmapValues = new MMapFloatVectorValues(values, addressAndSize);
             return values.flatVectorsScorer.getRandomVectorScorer(similarity, mmapValues, target);
         }
-        // Never hand `values` to the shared chain: Lucene's delegate would read its HasIndexSlice
-        // slice as float32 and overrun this FP16 data.
+
         return selectFallbackScorer(values, target, similarity);
     }
 

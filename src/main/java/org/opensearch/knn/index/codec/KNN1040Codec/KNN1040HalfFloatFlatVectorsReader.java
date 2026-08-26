@@ -218,7 +218,8 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
      */
     private KNN1040HalfFloatFlatVectorsValues newVectorValues(FieldEntry entry) throws IOException {
         IndexInput slice = vectorData.slice(VECTOR_VALUES_SLICE, entry.vectorDataOffset, entry.vectorDataLength);
-        DirectMonotonicReader ordToDocReader = entry.ordToDoc.isDense() ? null : entry.ordToDoc.getDirectMonotonicReader(vectorData);
+        boolean needsOrdToDocReader = entry.ordToDoc.isDense() == false && entry.ordToDoc.isEmpty() == false;
+        DirectMonotonicReader ordToDocReader = needsOrdToDocReader ? entry.ordToDoc.getDirectMonotonicReader(vectorData) : null;
         return new KNN1040HalfFloatFlatVectorsValues(entry.dimension, entry.size, slice, ordToDocReader, scorer, entry.similarity);
     }
 
@@ -234,7 +235,6 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
     public RandomVectorScorer getRandomVectorScorer(String field, float[] target) throws IOException {
         final FieldEntry entry = getFieldEntry(field, VectorEncoding.FLOAT32);
         KNN1040HalfFloatFlatVectorsValues base = newVectorValues(entry);
-        // Empty segment: search() relies on a null scorer to mean "nothing to collect".
         if (base.size() == 0) {
             return null;
         }
@@ -260,10 +260,10 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
         int numOrds = 0;
 
         for (int i = 0; i < numVectors; i++) {
+            if (knnCollector.earlyTerminated()) {
+                break;
+            }
             if (acceptedOrds == null || acceptedOrds.get(i)) {
-                if (knnCollector.earlyTerminated()) {
-                    break;
-                }
                 ords[numOrds++] = i;
                 if (numOrds == BULK_SCORE_BATCH_SIZE) {
                     collectBatch(randomScorer, knnCollector, ords, scores, numOrds);
@@ -326,7 +326,6 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
 
     @Override
     public void finishMerge() throws IOException {
-        // Revert the sequential access hint applied by getMergeInstance().
         vectorData.updateIOContext(dataContext);
     }
 
@@ -339,6 +338,11 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
         long vectorDataLength, int dimension, int size, OrdToDocDISIReaderConfiguration ordToDoc, FieldInfo info) {
 
         FieldEntry {
+            if (vectorEncoding != VectorEncoding.FLOAT32) {
+                throw new IllegalStateException(
+                    "Unexpected vector encoding for field=\"" + info.name + "\"; expected FLOAT32, got " + vectorEncoding
+                );
+            }
             if (similarity != info.getVectorSimilarityFunction()) {
                 throw new IllegalStateException(
                     "Inconsistent vector similarity function for field=\""
@@ -356,7 +360,6 @@ public class KNN1040HalfFloatFlatVectorsReader extends FlatVectorsReader {
                 );
             }
 
-            // FP16: 2 bytes per dimension, where Lucene's flat format uses encoding.byteSize.
             final int byteSize = Short.BYTES;
             long vectorBytes = Math.multiplyExact((long) infoVectorDimension, byteSize);
             long numBytes = Math.multiplyExact(vectorBytes, size);
