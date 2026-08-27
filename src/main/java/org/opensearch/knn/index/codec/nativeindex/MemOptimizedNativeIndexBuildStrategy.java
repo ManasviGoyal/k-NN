@@ -7,6 +7,8 @@ package org.opensearch.knn.index.codec.nativeindex;
 
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
+import org.apache.lucene.index.FieldInfo;
+import org.opensearch.knn.common.FieldInfoExtractor;
 import org.opensearch.knn.index.codec.nativeindex.model.BuildIndexParams;
 import org.opensearch.knn.index.codec.transfer.OffHeapVectorTransfer;
 import org.opensearch.knn.index.engine.KNNEngine;
@@ -121,8 +123,9 @@ final class MemOptimizedNativeIndexBuildStrategy implements NativeIndexBuildStra
             }
 
             // Write vector
+            final boolean skipFlat = shouldSkipFlatStorage(indexInfo);
             AccessController.doPrivileged((PrivilegedAction<Void>) () -> {
-                JNIService.writeIndex(indexInfo.getIndexOutputWithBuffer(), indexMemoryAddress, engine, indexParameters, false);
+                JNIService.writeIndex(indexInfo.getIndexOutputWithBuffer(), indexMemoryAddress, engine, indexParameters, skipFlat);
                 return null;
             });
 
@@ -134,5 +137,18 @@ final class MemOptimizedNativeIndexBuildStrategy implements NativeIndexBuildStra
                 exception
             );
         }
+    }
+
+    /**
+     * True only for {@code flat}+{@code half_float} and FLOAT+{@code sq,bits:16} ({@link FieldInfoExtractor#isHalfFloatFlatStorage} -
+     * the same check the read-side MOS reconstruction uses, so the two can't drift out of sync), and
+     * only when MOS is actually enabled for this index right now.
+     */
+    private static boolean shouldSkipFlatStorage(final BuildIndexParams indexInfo) {
+        if (indexInfo.isMemoryOptimizedSearchEnabled() == false) {
+            return false;
+        }
+        FieldInfo fieldInfo = indexInfo.getFieldInfo();
+        return fieldInfo != null && FieldInfoExtractor.isHalfFloatFlatStorage(fieldInfo);
     }
 }

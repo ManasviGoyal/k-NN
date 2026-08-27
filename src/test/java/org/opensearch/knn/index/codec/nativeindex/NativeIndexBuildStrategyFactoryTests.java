@@ -342,4 +342,21 @@ public class NativeIndexBuildStrategyFactoryTests extends KNNTestCase {
             assertSame(DefaultIndexBuildStrategy.getInstance(), strategy);
         }
     }
+
+    public void testIsMemoryOptimizedSearchEnabled_whenIndexSettingsNull_thenFalse() {
+        NativeIndexBuildStrategyFactory factory = new NativeIndexBuildStrategyFactory();
+        assertFalse(factory.isMemoryOptimizedSearchEnabled());
+    }
+
+    public void testIsMemoryOptimizedSearchEnabled_whenSettingTrue_thenTrue() {
+        when(indexSettings.getValue(KNNSettings.MEMORY_OPTIMIZED_KNN_SEARCH_MODE_SETTING)).thenReturn(true);
+        NativeIndexBuildStrategyFactory factory = new NativeIndexBuildStrategyFactory(repositoriesServiceSupplier, indexSettings);
+        assertTrue(factory.isMemoryOptimizedSearchEnabled());
+    }
+
+    public void testIsMemoryOptimizedSearchEnabled_whenSettingFalse_thenFalse() {
+        when(indexSettings.getValue(KNNSettings.MEMORY_OPTIMIZED_KNN_SEARCH_MODE_SETTING)).thenReturn(false);
+        NativeIndexBuildStrategyFactory factory = new NativeIndexBuildStrategyFactory(repositoriesServiceSupplier, indexSettings);
+        assertFalse(factory.isMemoryOptimizedSearchEnabled());
+    }
 }

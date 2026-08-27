@@ -6,6 +6,12 @@
 package org.opensearch.knn.index.codec.nativeindex;
 
 import lombok.SneakyThrows;
+import org.apache.lucene.index.DocValuesSkipIndexType;
+import org.apache.lucene.index.DocValuesType;
+import org.apache.lucene.index.FieldInfo;
+import org.apache.lucene.index.IndexOptions;
+import org.apache.lucene.index.VectorEncoding;
+import org.apache.lucene.index.VectorSimilarityFunction;
 import org.mockito.ArgumentCaptor;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
@@ -134,6 +140,98 @@ public class MemOptimizedNativeIndexBuildStrategyTests extends OpenSearchTestCas
                 prev = vector;
             }
         }
+    }
+
+    @SneakyThrows
+    public void testBuildAndWrite_whenHalfFloatAndMemoryOptimizedSearchEnabled_thenSkipsFlatStorage() {
+        assertSkipFlat(VectorDataType.HALF_FLOAT, true, true);
+    }
+
+    @SneakyThrows
+    public void testBuildAndWrite_whenHalfFloatButMemoryOptimizedSearchDisabled_thenDoesNotSkipFlatStorage() {
+        assertSkipFlat(VectorDataType.HALF_FLOAT, false, false);
+    }
+
+    @SneakyThrows
+    public void testBuildAndWrite_whenFloatEvenWithMemoryOptimizedSearchEnabled_thenDoesNotSkipFlatStorage() {
+        assertSkipFlat(VectorDataType.FLOAT, true, false);
+    }
+
+    @SneakyThrows
+    private void assertSkipFlat(VectorDataType vectorDataType, boolean memoryOptimizedSearchEnabled, boolean expectedSkipFlat) {
+        List<float[]> vectorValues = List.of(new float[] { 1, 2 }, new float[] { 2, 3 }, new float[] { 3, 4 });
+        final TestVectorValues.PreDefinedFloatVectorValues randomVectorValues = new TestVectorValues.PreDefinedFloatVectorValues(
+            vectorValues
+        );
+        final KNNVectorValues<byte[]> knnVectorValues = KNNVectorValuesFactory.getVectorValues(VectorDataType.FLOAT, randomVectorValues);
+
+        try (
+            MockedStatic<JNIService> mockedJNIService = Mockito.mockStatic(JNIService.class);
+            MockedStatic<OffHeapVectorTransferFactory> mockedOffHeapVectorTransferFactory = Mockito.mockStatic(
+                OffHeapVectorTransferFactory.class
+            )
+        ) {
+            mockedJNIService.when(() -> JNIService.initIndex(3, 2, Map.of("index", "param"), KNNEngine.FAISS)).thenReturn(100L);
+
+            OffHeapVectorTransfer offHeapVectorTransfer = mock(OffHeapVectorTransfer.class);
+            mockedOffHeapVectorTransferFactory.when(() -> OffHeapVectorTransferFactory.getVectorTransfer(vectorDataType, 8, 3))
+                .thenReturn(offHeapVectorTransfer);
+            IndexOutputWithBuffer indexOutputWithBuffer = Mockito.mock(IndexOutputWithBuffer.class);
+
+            when(offHeapVectorTransfer.getTransferLimit()).thenReturn(3);
+            when(offHeapVectorTransfer.transfer(org.mockito.ArgumentMatchers.any(), eq(false))).thenReturn(false);
+            when(offHeapVectorTransfer.flush(false)).thenReturn(true);
+            when(offHeapVectorTransfer.getVectorAddress()).thenReturn(200L);
+
+            BuildIndexParams buildIndexParams = BuildIndexParams.builder()
+                .field(FIELD_NAME)
+                .indexOutputWithBuffer(indexOutputWithBuffer)
+                .knnEngine(KNNEngine.FAISS)
+                .vectorDataType(vectorDataType)
+                .indexParameters(Map.of("index", "param"))
+                .knnVectorValuesSupplier(() -> knnVectorValues)
+                .totalLiveDocs((int) knnVectorValues.totalLiveDocs())
+                .memoryOptimizedSearchEnabled(memoryOptimizedSearchEnabled)
+                .fieldInfo(buildFieldInfo(vectorDataType))
+                .build();
+
+            MemOptimizedNativeIndexBuildStrategy.getInstance().buildAndWriteIndex(buildIndexParams);
+
+            mockedJNIService.verify(
+                () -> JNIService.writeIndex(
+                    eq(indexOutputWithBuffer),
+                    eq(100L),
+                    eq(KNNEngine.FAISS),
+                    eq(Map.of("index", "param")),
+                    eq(expectedSkipFlat)
+                )
+            );
+        }
+    }
+
+    private static final String FIELD_NAME = "test_field";
+
+    private static FieldInfo buildFieldInfo(final VectorDataType vectorDataType) {
+        return new FieldInfo(
+            FIELD_NAME,
+            0,
+            false,
+            false,
+            false,
+            IndexOptions.NONE,
+            DocValuesType.NONE,
+            DocValuesSkipIndexType.NONE,
+            -1,
+            Map.of(org.opensearch.knn.common.KNNConstants.VECTOR_DATA_TYPE_FIELD, vectorDataType.getValue()),
+            0,
+            0,
+            0,
+            2,
+            VectorEncoding.FLOAT32,
+            VectorSimilarityFunction.EUCLIDEAN,
+            false,
+            false
+        );
     }
 
     @SneakyThrows

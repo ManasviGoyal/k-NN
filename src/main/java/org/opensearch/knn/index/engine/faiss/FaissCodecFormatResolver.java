@@ -10,7 +10,9 @@ import org.opensearch.common.Nullable;
 import org.opensearch.index.mapper.MapperService;
 import org.opensearch.knn.index.KNNSettings;
 import org.opensearch.knn.index.VectorDataType;
+import org.opensearch.knn.index.codec.KNN1040Codec.Faiss1040HalfFloatScalarQuantizedKnnVectorsFormat;
 import org.opensearch.knn.index.codec.KNN1040Codec.Faiss1040ScalarQuantizedKnnVectorsFormat;
+import org.opensearch.knn.index.codec.KNN990Codec.NativeEngines990HalfFloatKnnVectorsFormat;
 import org.opensearch.knn.index.codec.KNN990Codec.NativeEngines990KnnVectorsFormat;
 import org.opensearch.knn.index.codec.nativeindex.NativeIndexBuildStrategyFactory;
 import org.opensearch.knn.index.engine.CodecFormatResolver;
@@ -55,13 +57,17 @@ public class FaissCodecFormatResolver implements CodecFormatResolver {
         ResolvedIndexSpec resolvedSpec,
         VectorDataType vectorDataType
     ) {
+        final int approximateThreshold = KNNSettings.getApproximateThresholdValue(mapperService);
         if (resolvedSpec.isFaissSQOneBit()) {
-            return new Faiss1040ScalarQuantizedKnnVectorsFormat(
-                KNNSettings.getApproximateThresholdValue(mapperService),
-                nativeIndexBuildStrategyFactory
-            );
+            return vectorDataType == VectorDataType.HALF_FLOAT
+                ? new Faiss1040HalfFloatScalarQuantizedKnnVectorsFormat(approximateThreshold, nativeIndexBuildStrategyFactory)
+                : new Faiss1040ScalarQuantizedKnnVectorsFormat(approximateThreshold, nativeIndexBuildStrategyFactory);
         }
-        return resolve();
+
+        final boolean useHalfFloatVectorFormat = vectorDataType == VectorDataType.HALF_FLOAT || resolvedSpec.isFP16QuantizedIndex();
+        return useHalfFloatVectorFormat
+            ? new NativeEngines990HalfFloatKnnVectorsFormat(approximateThreshold, nativeIndexBuildStrategyFactory)
+            : new NativeEngines990KnnVectorsFormat(approximateThreshold, nativeIndexBuildStrategyFactory);
     }
 
     @Override

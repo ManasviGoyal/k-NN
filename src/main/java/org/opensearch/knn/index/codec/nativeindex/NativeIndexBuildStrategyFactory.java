@@ -9,6 +9,7 @@ import lombok.Setter;
 import org.apache.lucene.index.FieldInfo;
 import org.opensearch.index.IndexSettings;
 import org.opensearch.knn.common.FieldInfoExtractor;
+import org.opensearch.knn.index.KNNSettings;
 import org.opensearch.knn.index.codec.nativeindex.remote.RemoteIndexBuildStrategy;
 import org.opensearch.knn.index.engine.Encoder;
 import org.opensearch.knn.index.engine.KNNEngine;
@@ -84,5 +85,9 @@ public final class NativeIndexBuildStrategyFactory {
         } else {
             return strategy;
         }
+    }
+
+    public boolean isMemoryOptimizedSearchEnabled() {
+        return indexSettings != null && indexSettings.getValue(KNNSettings.MEMORY_OPTIMIZED_KNN_SEARCH_MODE_SETTING);
     }
 }

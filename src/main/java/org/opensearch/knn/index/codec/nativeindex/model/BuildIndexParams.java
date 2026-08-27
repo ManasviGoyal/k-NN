@@ -9,6 +9,7 @@ import lombok.Builder;
 import lombok.ToString;
 import lombok.Value;
 import org.apache.lucene.util.quantization.QuantizedByteVectorValues;
+import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.SegmentWriteState;
 import org.opensearch.common.Nullable;
 import org.opensearch.knn.index.VectorDataType;
@@ -37,7 +38,9 @@ public class BuildIndexParams {
     Supplier<KNNVectorValues<?>> knnVectorValuesSupplier;
     int totalLiveDocs;
     SegmentWriteState segmentWriteState;
+    FieldInfo fieldInfo;
     boolean isFlush;
+    boolean memoryOptimizedSearchEnabled;
     /**
      * Optional quantized byte vector values for SQ (Binary Quantized) index building.
      * Provided by Faiss104ScalarQuantizedKnnVectorsWriter, null for non-SQ fields.

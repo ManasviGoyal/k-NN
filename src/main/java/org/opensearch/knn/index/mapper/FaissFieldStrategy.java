@@ -17,6 +17,7 @@ import org.opensearch.Version;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.knn.index.SpaceType;
 import org.opensearch.knn.index.VectorDataType;
+import org.opensearch.knn.index.engine.Encoder;
 import org.opensearch.knn.index.engine.KNNEngine;
 import org.opensearch.knn.index.engine.KNNLibraryIndexingContext;
 import org.opensearch.knn.index.engine.KNNMethodContext;
@@ -71,6 +72,9 @@ public final class FaissFieldStrategy implements EngineFieldStrategy {
         if (spec.isSQOneBit()) {
             SQConfig sqConfig = SQConfig.builder().bits(spec.getQuantizationBits().getValue()).build();
             fieldType.putAttribute(SQ_CONFIG, SQConfigParser.toCsv(sqConfig));
+        } else if (spec.isFP16QuantizedIndex()) {
+            SQConfig sqConfig = SQConfig.builder().bits(Encoder.QuantizationBits.SIXTEEN.getValue()).build();
+            fieldType.putAttribute(SQ_CONFIG, SQConfigParser.toCsv(sqConfig));
         } else {
             if (quantizationConfig != null && quantizationConfig != QuantizationConfig.EMPTY) {
                 fieldType.putAttribute(QFRAMEWORK_CONFIG, QuantizationConfigParser.toCsv(quantizationConfig));
@@ -92,7 +96,9 @@ public final class FaissFieldStrategy implements EngineFieldStrategy {
             int adjustedDimension = vectorDataType == VectorDataType.BINARY
                 ? knnMappingConfig.getDimension() / 8
                 : knnMappingConfig.getDimension();
-            final VectorEncoding encoding = vectorDataType == VectorDataType.FLOAT ? VectorEncoding.FLOAT32 : VectorEncoding.BYTE;
+            final VectorEncoding encoding = (vectorDataType == VectorDataType.FLOAT || vectorDataType == VectorDataType.HALF_FLOAT)
+                ? VectorEncoding.FLOAT32
+                : VectorEncoding.BYTE;
             final VectorSimilarityFunction similarityFunction = findBestMatchingVectorSimilarityFunction(
                 resolvedKnnMethodContext.getSpaceType(),
                 indexCreatedVersion

@@ -15,6 +15,7 @@ import org.opensearch.index.mapper.MappedFieldType;
 import org.opensearch.index.mapper.MapperService;
 import org.opensearch.knn.index.SpaceType;
 import org.opensearch.knn.index.VectorDataType;
+import org.opensearch.knn.index.engine.Encoder;
 import org.opensearch.knn.index.engine.KNNEngine;
 import org.opensearch.knn.index.engine.MemoryOptimizedSearchSupportSpec;
 import org.opensearch.knn.index.engine.faiss.SQConfig;
@@ -201,5 +202,22 @@ public class FieldInfoExtractor {
             return SQConfig.EMPTY;
         }
         return SQConfigParser.fromCsv(configString);
+    }
+
+    /**
+     * Single source of truth for whether a Faiss field's native flat storage is FP16-redundant with
+     * an equivalent Lucene {@code .vec} copy: {@code half_float}-typed fields (any encoder), and FLOAT
+     * fields quantized via {@code sq, bits:16} (Faiss's own ScalarQuantizer already stores that data
+     * as FP16 natively). Shared by both the write-side skip-storage decision and the read-side MOS
+     * reconstruction decision, so the two can never drift out of sync.
+     *
+     * @param fieldInfo {@link FieldInfo}
+     * @return true if this field's native flat storage duplicates an equivalent FP16 {@code .vec} copy
+     */
+    public static boolean isHalfFloatFlatStorage(final FieldInfo fieldInfo) {
+        if (extractVectorDataType(fieldInfo) == VectorDataType.HALF_FLOAT) {
+            return true;
+        }
+        return isSQField(fieldInfo) && extractSQConfig(fieldInfo).getBits() == Encoder.QuantizationBits.SIXTEEN.getValue();
     }
 }

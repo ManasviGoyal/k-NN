@@ -120,7 +120,11 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
         // resolveCompressionLevelFromMethodContext() falls back to x1 when no encoder was resolved
         // (the plain-FLOAT convention) - half_float's equivalent "no SQ" default is x2, not x1.
         CompressionLevel resolvedCompressionLevel = isEncoderSpecified(resolvedKNNMethodContext)
-            ? resolveCompressionLevelFromMethodContext(resolvedKNNMethodContext, knnMethodConfigContext, LuceneHNSWMethod.SUPPORTED_ENCODERS)
+            ? resolveCompressionLevelFromMethodContext(
+                resolvedKNNMethodContext,
+                knnMethodConfigContext,
+                LuceneHNSWMethod.SUPPORTED_ENCODERS
+            )
             : DEFAULT_COMPRESSION_HALF_FLOAT;
         validateCompressionConflicts(knnMethodConfigContext.getCompressionLevel(), resolvedCompressionLevel);
         return ResolvedMethodContext.builder()

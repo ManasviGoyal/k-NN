@@ -221,6 +221,7 @@ public class NativeIndexWriter {
 
         return BuildIndexParams.builder()
             .field(fieldInfo.getName())
+            .fieldInfo(fieldInfo)
             .indexParameters(parameters)
             .vectorDataType(vectorDataType)
             .knnEngine(knnEngine)
@@ -231,6 +232,7 @@ public class NativeIndexWriter {
             .segmentWriteState(state)
             .isFlush(isFlush)
             .quantizedByteVectorValues(quantizedByteVectorValues)
+            .memoryOptimizedSearchEnabled(indexBuilderFactory.isMemoryOptimizedSearchEnabled())
             .build();
     }
 
