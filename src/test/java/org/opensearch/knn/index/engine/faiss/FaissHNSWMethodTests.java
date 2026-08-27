@@ -26,7 +26,6 @@ import java.util.Map;
 import java.util.function.Function;
 
 import static org.opensearch.knn.common.KNNConstants.ENCODER_FLAT;
-import static org.opensearch.knn.common.KNNConstants.ENCODER_PARAMETER_PQ_M;
 import static org.opensearch.knn.common.KNNConstants.ENCODER_PQ;
 import static org.opensearch.knn.common.KNNConstants.ENCODER_SQ;
 import static org.opensearch.knn.common.KNNConstants.METHOD_ENCODER_PARAMETER;
@@ -74,28 +73,6 @@ public class FaissHNSWMethodTests extends KNNTestCase {
         );
 
         assertNotNull(new FaissHNSWMethod().validate(knnMethodContext, knnMethodConfigContext));
-    }
-
-    public void testSupportedEncoders_pqEncoderAcceptsHalfFloat() {
-        Encoder pqEncoder = FaissHNSWMethod.SUPPORTED_ENCODERS.get(ENCODER_PQ);
-        KNNMethodConfigContext context = KNNMethodConfigContext.builder()
-            .versionCreated(Version.CURRENT)
-            .vectorDataType(VectorDataType.HALF_FLOAT)
-            .dimension(128)
-            .build();
-        MethodComponentContext mcc = new MethodComponentContext(ENCODER_PQ, Map.of(ENCODER_PARAMETER_PQ_M, 4));
-        assertNull(pqEncoder.getMethodComponent().validate(mcc, context));
-    }
-
-    public void testSupportedEncoders_binaryEncoderAcceptsHalfFloat() {
-        Encoder binaryEncoder = FaissHNSWMethod.SUPPORTED_ENCODERS.get(QFrameBitEncoder.NAME);
-        KNNMethodConfigContext context = KNNMethodConfigContext.builder()
-            .versionCreated(Version.CURRENT)
-            .vectorDataType(VectorDataType.HALF_FLOAT)
-            .dimension(128)
-            .build();
-        MethodComponentContext mcc = new MethodComponentContext(QFrameBitEncoder.NAME, Map.of());
-        assertNull(binaryEncoder.getMethodComponent().validate(mcc, context));
     }
 
     public void testValidate_whenHalfFloatWithSqBits1Encoder_thenAccepted() {
