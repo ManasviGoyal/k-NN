@@ -27,18 +27,16 @@ import static org.opensearch.knn.index.engine.lucene.LuceneFlatMethod.FLAT_METHO
 /**
  * Resolves method configuration for the Lucene flat method. For FLOAT vectors, the flat method uses SQ
  * (1-bit quantization) without an HNSW graph, supporting only {@link org.opensearch.knn.index.mapper.CompressionLevel#x32}
- * compression. HALF_FLOAT vectors don't go through an encoder - compression is expressed purely via
- * {@link org.opensearch.knn.index.mapper.CompressionLevel}, currently supporting only {@link
- * org.opensearch.knn.index.mapper.CompressionLevel#x1} (raw FP16, no further reduction), which is also
- * the default. {@link org.opensearch.knn.index.mapper.CompressionLevel#x16} (an actual quantization
- * scheme on top of FP16) is added in a follow-up. Neither data type supports
- * {@link org.opensearch.knn.index.mapper.Mode}.
+ * compression. HALF_FLOAT vectors default to {@link org.opensearch.knn.index.mapper.CompressionLevel#x16}
+ * (SQ 1-bit - 16x for HALF_FLOAT's 16-bit storage, vs 32x for FLOAT's 32-bit storage), but may also opt
+ * into {@link org.opensearch.knn.index.mapper.CompressionLevel#x1} for exact FP16 storage with no
+ * further reduction. Neither data type supports {@link org.opensearch.knn.index.mapper.Mode}.
  */
 public class LuceneFlatMethodResolver extends AbstractMethodResolver {
 
     static final CompressionLevel DEFAULT_COMPRESSION = CompressionLevel.x32;
-    static final CompressionLevel DEFAULT_COMPRESSION_HALF_FLOAT = CompressionLevel.x1;
-    static final Set<CompressionLevel> SUPPORTED_COMPRESSION_HALF_FLOAT = Set.of(CompressionLevel.x1);
+    static final CompressionLevel DEFAULT_COMPRESSION_HALF_FLOAT = CompressionLevel.x16;
+    private static final Set<CompressionLevel> SUPPORTED_COMPRESSION_LEVELS_HALF_FLOAT = Set.of(CompressionLevel.x1, CompressionLevel.x16);
 
     @Override
     public ResolvedMethodContext resolveMethod(
@@ -94,26 +92,22 @@ public class LuceneFlatMethodResolver extends AbstractMethodResolver {
     }
 
     private CompressionLevel validateAndResolveCompressionLevel(KNNMethodConfigContext knnMethodConfigContext) {
-        boolean isHalfFloat = VectorDataType.HALF_FLOAT == knnMethodConfigContext.getVectorDataType();
-        // HALF_FLOAT isn't SQ, so it gets its own default instead of x32's rescore-triggering one.
+        final boolean isHalfFloat = VectorDataType.HALF_FLOAT == knnMethodConfigContext.getVectorDataType();
         final CompressionLevel defaultCompression = isHalfFloat ? DEFAULT_COMPRESSION_HALF_FLOAT : DEFAULT_COMPRESSION;
 
         CompressionLevel compressionLevel = knnMethodConfigContext.getCompressionLevel();
         if (CompressionLevel.isConfigured(compressionLevel)) {
-            if (isHalfFloat) {
-                ValidationException validationException = validateCompressionSupported(
-                    compressionLevel,
-                    SUPPORTED_COMPRESSION_HALF_FLOAT,
-                    KNNEngine.LUCENE,
-                    null
-                );
-                if (validationException != null) {
-                    throw validationException;
-                }
-            } else if (compressionLevel != defaultCompression) {
+            // HALF_FLOAT supports x1 (exact FP16) and x16 (SQ 1-bit); FLOAT supports only x32 (SQ 1-bit) for now.
+            final boolean isValid = isHalfFloat
+                ? SUPPORTED_COMPRESSION_LEVELS_HALF_FLOAT.contains(compressionLevel)
+                : compressionLevel == defaultCompression;
+            if (isValid == false) {
                 ValidationException validationException = new ValidationException();
+                final String supportedCompressionLevels = isHalfFloat
+                    ? String.format(Locale.ROOT, "\"%s\" or \"%s\"", CompressionLevel.x1.getName(), CompressionLevel.x16.getName())
+                    : String.format(Locale.ROOT, "\"%s\"", defaultCompression.getName());
                 validationException.addValidationError(
-                    String.format(Locale.ROOT, "\"%s\" method only supports \"%s\" compression", METHOD_FLAT, defaultCompression.getName())
+                    String.format(Locale.ROOT, "\"%s\" method only supports %s compression", METHOD_FLAT, supportedCompressionLevels)
                 );
                 throw validationException;
             }

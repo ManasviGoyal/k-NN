@@ -30,7 +30,7 @@ import static org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsFormat.MAXIMU
 /**
  * HNSW format for half-float vectors. Mostly identical to {@link org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsFormat},
  * but uses {@link KNN1040HalfFloatFlatVectorsFormat} as the flat vector delegate so the graph's backing
- * storage is FP16 instead of FP32, inheriting its SIMD-accelerated scorer for graph traversal.
+ * storage is half-float instead of float, inheriting its SIMD-accelerated scorer for graph traversal.
  */
 public class KNN1040HnswHalfFloatVectorsFormat extends KnnVectorsFormat {
 

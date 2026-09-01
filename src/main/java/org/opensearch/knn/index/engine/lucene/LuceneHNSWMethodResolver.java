@@ -18,11 +18,14 @@ import org.opensearch.knn.index.engine.MethodComponent;
 import org.opensearch.knn.index.engine.MethodComponentContext;
 import org.opensearch.knn.index.engine.ResolvedMethodContext;
 import org.opensearch.knn.index.mapper.CompressionLevel;
+import org.opensearch.knn.index.mapper.Mode;
 
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import static org.opensearch.knn.common.KNNConstants.COMPRESSION_LEVEL_PARAMETER;
 import static org.opensearch.knn.common.KNNConstants.LUCENE_SCALAR_QUANTIZER_DEFAULT_BITS_AFTER_V360;
 import static org.opensearch.knn.common.KNNConstants.LUCENE_SQ_BITS;
 import static org.opensearch.knn.common.KNNConstants.LUCENE_SQ_DEFAULT_BITS;
@@ -33,13 +36,10 @@ import static org.opensearch.knn.index.engine.lucene.LuceneHNSWMethod.SUPPORTED_
 
 /**
  * Resolves method configuration for the Lucene HNSW method. Supports optional scalar quantization
- * encoding and compression-level-based resolution, with supported compression levels of x1, x4, and x32.
- * HALF_FLOAT vectors don't go through an encoder - compression is expressed purely via {@link
- * org.opensearch.knn.index.mapper.CompressionLevel}, currently supporting only {@link
- * org.opensearch.knn.index.mapper.CompressionLevel#x1} (raw FP16, no further reduction), which is also
- * the default (mirrors {@link LuceneFlatMethodResolver}). {@link
- * org.opensearch.knn.index.mapper.CompressionLevel#x16} (an actual quantization scheme on top of FP16)
- * is added in a follow-up.
+ * encoding and compression-level-based resolution, with supported compression levels of x1, x4, and x32
+ * for FLOAT. HALF_FLOAT vectors default to {@link org.opensearch.knn.index.mapper.CompressionLevel#x1}
+ * (plain FP16 graph, no SQ; mirrors {@link LuceneFlatMethodResolver}), or may opt into x16 (SQ 1-bit,
+ * {@code bits=1} - 16x for HALF_FLOAT's 16-bit storage, vs 32x for FLOAT's 32-bit storage).
  */
 public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
 
@@ -49,7 +49,10 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
         CompressionLevel.x32
     );
     static final CompressionLevel DEFAULT_COMPRESSION_HALF_FLOAT = CompressionLevel.x1;
-    static final Set<CompressionLevel> SUPPORTED_COMPRESSION_HALF_FLOAT = Set.of(CompressionLevel.x1);
+    private static final Set<CompressionLevel> SUPPORTED_COMPRESSION_LEVELS_HALF_FLOAT = Set.of(
+        DEFAULT_COMPRESSION_HALF_FLOAT,
+        CompressionLevel.x16
+    );
 
     @Override
     public ResolvedMethodContext resolveMethod(
@@ -91,13 +94,27 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
         SpaceType spaceType
     ) {
         ValidationException validationException = validateNotTrainingContext(shouldRequireTraining, KNNEngine.LUCENE, null);
-        CompressionLevel compressionLevel = knnMethodConfigContext.getCompressionLevel();
         validationException = validateCompressionSupported(
-            compressionLevel,
-            SUPPORTED_COMPRESSION_HALF_FLOAT,
+            knnMethodConfigContext.getCompressionLevel(),
+            SUPPORTED_COMPRESSION_LEVELS_HALF_FLOAT,
             KNNEngine.LUCENE,
             validationException
         );
+        // half_float's only encoder configuration (SQ 1-bit) is fully determined by compression_level
+        // (x16) and auto-resolved internally - there's no tunable parameter surface to expose, so
+        // users configure it via compression_level, not by writing an encoder block themselves.
+        if (isEncoderSpecified(knnMethodContext)) {
+            validationException = validationException == null ? new ValidationException() : validationException;
+            validationException.addValidationError(
+                String.format(
+                    Locale.ROOT,
+                    "\"%s\" parameter is not supported for \"%s\" data type; use \"%s\" instead.",
+                    METHOD_ENCODER_PARAMETER,
+                    VectorDataType.HALF_FLOAT.getValue(),
+                    COMPRESSION_LEVEL_PARAMETER
+                )
+            );
+        }
         if (validationException != null) {
             throw validationException;
         }
@@ -108,15 +125,52 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
             spaceType,
             METHOD_HNSW
         );
+        resolveEncoder(resolvedKNNMethodContext, knnMethodConfigContext);
+        resolveEncoderBitsAndValidate(knnMethodContext, resolvedKNNMethodContext, knnMethodConfigContext);
         resolveMethodParams(resolvedKNNMethodContext.getMethodComponentContext(), knnMethodConfigContext, HNSW_METHOD_COMPONENT);
 
-        CompressionLevel resolvedCompressionLevel = CompressionLevel.isConfigured(compressionLevel)
-            ? compressionLevel
+        // The CompressionLevel enum constant here (x1) is the same one FLOAT's own default resolves
+        // to, but "x1" just means "no additional quantization beyond this data type's own native
+        // representation" - it's data-type-relative, not a shared format. HALF_FLOAT still resolves
+        // to KNN1040HnswHalfFloatVectorsFormat (FP16), never the FLOAT32 Lucene99HnswVectorsFormat
+        // FLOAT's x1 resolves to. This dedicated dispatch exists for the encoder-resolution and
+        // validation differences above, not because the two data types share any storage at x1.
+        CompressionLevel resolvedCompressionLevel = isEncoderSpecified(resolvedKNNMethodContext)
+            ? resolveCompressionLevelFromMethodContext(resolvedKNNMethodContext, knnMethodConfigContext, LuceneHNSWMethod.SUPPORTED_ENCODERS)
             : DEFAULT_COMPRESSION_HALF_FLOAT;
+        validateCompressionConflicts(knnMethodConfigContext.getCompressionLevel(), resolvedCompressionLevel);
         return ResolvedMethodContext.builder()
             .knnMethodContext(resolvedKNNMethodContext)
             .compressionLevel(resolvedCompressionLevel)
             .build();
+    }
+
+    // AbstractMethodResolver.shouldEncoderBeResolved() only auto-resolves an encoder for FLOAT. Lucene
+    // HNSW also supports SQ 1-bit for HALF_FLOAT, so widen just that data-type check here rather than
+    // in the shared base class, which Faiss's resolver also uses. Checks for x16 specifically (rather
+    // than reusing the "anything but x1" shortcut below), since x16 is half_float's only SQ-triggering
+    // compression level - unlike FLOAT, where any configured level besides x1 (or ON_DISK mode with
+    // no level configured) resolves an encoder.
+    @Override
+    protected boolean shouldEncoderBeResolved(KNNMethodContext knnMethodContext, KNNMethodConfigContext knnMethodConfigContext) {
+        if (isEncoderSpecified(knnMethodContext)) {
+            return false;
+        }
+
+        if (knnMethodConfigContext.getVectorDataType() == VectorDataType.HALF_FLOAT) {
+            return knnMethodConfigContext.getCompressionLevel() == CompressionLevel.x16;
+        }
+
+        if (knnMethodConfigContext.getCompressionLevel() == CompressionLevel.x1) {
+            return false;
+        }
+
+        if (CompressionLevel.isConfigured(knnMethodConfigContext.getCompressionLevel()) == false
+            && Mode.ON_DISK != knnMethodConfigContext.getMode()) {
+            return false;
+        }
+
+        return knnMethodConfigContext.getVectorDataType() == VectorDataType.FLOAT;
     }
 
     protected void resolveEncoder(KNNMethodContext resolvedKNNMethodContext, KNNMethodConfigContext knnMethodConfigContext) {
@@ -174,7 +228,7 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
                 : getDefaultCompressionLevel(knnMethodConfigContext);
             boolean useNewDefault = isV360OrLater
                 && LuceneSQEncoder.Bits.fromValue(LUCENE_SCALAR_QUANTIZER_DEFAULT_BITS_AFTER_V360)
-                    .getCompressionLevel() == effectiveCompression;
+                    .getCompressionLevel(knnMethodConfigContext.getVectorDataType()) == effectiveCompression;
             encoderComponentContext.getParameters()
                 .put(LUCENE_SQ_BITS, useNewDefault ? LUCENE_SCALAR_QUANTIZER_DEFAULT_BITS_AFTER_V360 : LUCENE_SQ_DEFAULT_BITS);
         }

@@ -19,6 +19,7 @@ import org.opensearch.knn.index.codec.params.KNNScalarQuantizedVectorsFormatPara
 import org.opensearch.knn.index.engine.CodecFormatResolver;
 import org.opensearch.knn.index.engine.ResolvedIndexSpec;
 import org.opensearch.knn.index.engine.KNNMethodContext;
+import org.opensearch.knn.index.mapper.CompressionLevel;
 
 import java.util.Map;
 import java.util.function.Function;
@@ -70,6 +71,22 @@ public class LuceneCodecFormatResolver implements CodecFormatResolver {
         ResolvedIndexSpec resolvedSpec,
         VectorDataType vectorDataType
     ) {
+        // resolvedSpec carries the resolved compression level too (see AbstractKNNMethod#buildResolvedIndexSpec) -
+        // needed here to pick the correct scalar-quantization encoding for half_float + x32.
+        CompressionLevel compressionLevel = resolvedSpec != null ? resolvedSpec.getCompressionLevel() : CompressionLevel.NOT_CONFIGURED;
+        return resolve(field, methodContext, params, defaultMaxConnections, defaultBeamWidth, vectorDataType, compressionLevel);
+    }
+
+    @Override
+    public KnnVectorsFormat resolve(
+        String field,
+        KNNMethodContext methodContext,
+        Map<String, Object> params,
+        int defaultMaxConnections,
+        int defaultBeamWidth,
+        VectorDataType vectorDataType,
+        CompressionLevel compressionLevel
+    ) {
         LuceneVectorsFormatType formatType = determineFormatType(
             field,
             methodContext,
@@ -91,7 +108,8 @@ public class LuceneCodecFormatResolver implements CodecFormatResolver {
                 defaultMaxConnections,
                 defaultBeamWidth,
                 approximateThreshold,
-                vectorDataType
+                vectorDataType,
+                compressionLevel
             )
         );
     }
