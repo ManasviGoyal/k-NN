@@ -176,11 +176,10 @@ public class LuceneFlatMethodResolverTests extends KNNTestCase {
     }
 
     /**
-     * HALF_FLOAT must not inherit the x32 default: it does not go through an encoder, and x32
-     * combined with the flat method switches on a default rescore that cannot change an exhaustive
-     * FP16 ranking.
+     * HALF_FLOAT must not inherit the x32 default: absent an explicit choice, it stays on x2 (exact
+     * FP16 storage, no SQ, no rescore) rather than opting into SQ 1-bit implicitly.
      */
-    public void testResolveMethod_whenFlatMethodWithHalfFloat_thenCompressionX1AndNoRescore() {
+    public void testResolveMethod_whenFlatMethodWithHalfFloat_thenCompressionX16() {
         KNNMethodContext flatMethodContext = new KNNMethodContext(
             KNNEngine.LUCENE,
             SpaceType.L2,
@@ -193,11 +192,7 @@ public class LuceneFlatMethodResolverTests extends KNNTestCase {
             SpaceType.L2
         );
 
-        assertEquals(CompressionLevel.x1, resolvedMethodContext.getCompressionLevel());
-        assertNull(
-            "half_float flat must not default to a rescore pass",
-            resolvedMethodContext.getCompressionLevel().getDefaultRescoreContext()
-        );
+        assertEquals(CompressionLevel.x16, resolvedMethodContext.getCompressionLevel());
 
         // FLOAT keeps the existing x32 default and its rescore behaviour.
         ResolvedMethodContext floatContext = TEST_RESOLVER.resolveMethod(
@@ -209,7 +204,9 @@ public class LuceneFlatMethodResolverTests extends KNNTestCase {
         assertEquals(CompressionLevel.x32, floatContext.getCompressionLevel());
     }
 
-    /** The default (x1) must also be accepted when set explicitly, not just by default. */
+    /**
+     * HALF_FLOAT may opt into x1 explicitly: exact FP16 storage, no further reduction (also the default).
+     */
     public void testResolveMethod_whenFlatMethodWithHalfFloatAndExplicitX1_thenResolve() {
         KNNMethodContext flatMethodContext = new KNNMethodContext(
             KNNEngine.LUCENE,
@@ -230,19 +227,39 @@ public class LuceneFlatMethodResolverTests extends KNNTestCase {
     }
 
     /**
-     * Only x1 is supported for HALF_FLOAT for now; everything else - including x16, which is added in
-     * a follow-up once real quantization backs it - must throw.
+     * HALF_FLOAT may opt into x16 explicitly: SQ 1-bit with an FP16 (instead of FP32) rescoring copy,
+     * the same mechanism FLOAT's x32 uses (also the default).
      */
-    public void testResolveMethod_whenFlatMethodWithHalfFloatAndUnsupportedCompression_thenThrow() {
+    public void testResolveMethod_whenFlatMethodWithHalfFloatAndExplicitX16_thenResolve() {
         KNNMethodContext flatMethodContext = new KNNMethodContext(
             KNNEngine.LUCENE,
             SpaceType.L2,
             new MethodComponentContext(METHOD_FLAT, Map.of())
         );
+        ResolvedMethodContext resolvedMethodContext = TEST_RESOLVER.resolveMethod(
+            flatMethodContext,
+            KNNMethodConfigContext.builder()
+                .vectorDataType(VectorDataType.HALF_FLOAT)
+                .compressionLevel(CompressionLevel.x16)
+                .versionCreated(Version.CURRENT)
+                .build(),
+            false,
+            SpaceType.L2
+        );
+        assertEquals(CompressionLevel.x16, resolvedMethodContext.getCompressionLevel());
+    }
+
+    /** Every compression level besides x1 (default) and x16 (opt-in SQ 1-bit) must still be rejected for HALF_FLOAT. */
+    public void testResolveMethod_whenFlatMethodWithHalfFloatAndUnsupportedCompression_thenThrow() {
         for (CompressionLevel level : CompressionLevel.values()) {
-            if (level == CompressionLevel.x1 || level == CompressionLevel.NOT_CONFIGURED) {
+            if (level == CompressionLevel.x1 || level == CompressionLevel.x16 || level == CompressionLevel.NOT_CONFIGURED) {
                 continue;
             }
+            KNNMethodContext flatMethodContext = new KNNMethodContext(
+                KNNEngine.LUCENE,
+                SpaceType.L2,
+                new MethodComponentContext(METHOD_FLAT, Map.of())
+            );
             expectThrows(
                 ValidationException.class,
                 () -> TEST_RESOLVER.resolveMethod(

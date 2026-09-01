@@ -2741,7 +2741,7 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
         KNNVectorFieldMapper.TypeParser typeParser = new KNNVectorFieldMapper.TypeParser(() -> modelDao);
 
         // half_float + flat with no compression_level set must still succeed
-        // and implicitly resolve to 1x
+        // and implicitly resolve to 16x
         XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()
             .startObject()
             .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
@@ -2792,7 +2792,7 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
     }
 
     @SneakyThrows
-    public void testTypeParser_whenHalfFloatFlatWithExplicitX32Compression_thenThrow() {
+    public void testTypeParser_whenHalfFloatFlatWithExplicitX16Compression_thenSuccess() {
         String fieldName = "test-field-name";
         String indexName = "test-index-name";
 
@@ -2800,16 +2800,45 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
         ModelDao modelDao = mock(ModelDao.class);
         KNNVectorFieldMapper.TypeParser typeParser = new KNNVectorFieldMapper.TypeParser(() -> modelDao);
 
-        // half_float currently only supports 1x (its raw on-disk footprint, no further reduction);
-        // any other explicit compression value must still be rejected, just no longer by the
-        // mapper's blanket non-float check -- by LuceneFlatMethodResolver's per-data-type
-        // validation instead.
+        // half_float + flat may opt into x16 explicitly: SQ 1-bit with an FP16 (instead of FP32)
+        // rescoring copy, the same mechanism FLOAT's x32 uses (also the default).
         XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()
             .startObject()
             .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
             .field(DIMENSION_FIELD_NAME, TEST_DIMENSION)
             .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
-            .field(COMPRESSION_LEVEL_PARAMETER, CompressionLevel.x32.getName())
+            .field(COMPRESSION_LEVEL_PARAMETER, CompressionLevel.x16.getName())
+            .startObject(KNN_METHOD)
+            .field(NAME, METHOD_FLAT)
+            .field(KNN_ENGINE, KNNEngine.LUCENE.getName())
+            .endObject()
+            .endObject();
+
+        KNNVectorFieldMapper.Builder builder = (KNNVectorFieldMapper.Builder) typeParser.parse(
+            fieldName,
+            xContentBuilderToMap(xContentBuilder),
+            buildParserContext(indexName, settings)
+        );
+        assertNotNull(builder);
+    }
+
+    @SneakyThrows
+    public void testTypeParser_whenHalfFloatFlatWithUnsupportedCompression_thenThrow() {
+        String fieldName = "test-field-name";
+        String indexName = "test-index-name";
+
+        Settings settings = Settings.builder().put(settings(CURRENT).build()).put(KNN_INDEX, true).build();
+        ModelDao modelDao = mock(ModelDao.class);
+        KNNVectorFieldMapper.TypeParser typeParser = new KNNVectorFieldMapper.TypeParser(() -> modelDao);
+
+        // half_float only supports x1 or x16 (opt-in SQ 1-bit, also the default); anything else must
+        // still be rejected, by LuceneFlatMethodResolver's per-data-type validation.
+        XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()
+            .startObject()
+            .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+            .field(DIMENSION_FIELD_NAME, TEST_DIMENSION)
+            .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+            .field(COMPRESSION_LEVEL_PARAMETER, CompressionLevel.x4.getName())
             .startObject(KNN_METHOD)
             .field(NAME, METHOD_FLAT)
             .field(KNN_ENGINE, KNNEngine.LUCENE.getName())
@@ -2820,7 +2849,7 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
             ValidationException.class,
             () -> typeParser.parse(fieldName, xContentBuilderToMap(xContentBuilder), buildParserContext(indexName, settings))
         );
-        assertTrue(exception.getMessage().contains("\"32x\" compression"));
+        assertTrue(exception.getMessage().contains("compression"));
     }
 
     @SneakyThrows
