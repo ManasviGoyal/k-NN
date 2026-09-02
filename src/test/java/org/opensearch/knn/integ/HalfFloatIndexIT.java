@@ -464,17 +464,23 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
     // Any compression level other than 1x (default) or 16x (this feature) must still be rejected.
     @SneakyThrows
     public void testHalfFloatFlat_withUnsupportedCompression_shouldFail() {
-        String mapping = KNNJsonIndexMappingsBuilder.builder()
-            .fieldName(FIELD_NAME)
-            .dimension(DIMENSION)
-            .vectorDataType("half_float")
-            .compressionLevel("4x")
-            .method(KNNJsonIndexMappingsBuilder.Method.builder().methodName("flat").engine("lucene").spaceType("l2").build())
-            .build()
-            .getIndexMapping();
+        // half_float supports only 1x and 16x - every level defined against FLOAT's 32 bits is rejected.
+        for (String compression : new String[] { "2x", "4x", "8x", "32x" }) {
+            String mapping = KNNJsonIndexMappingsBuilder.builder()
+                .fieldName(FIELD_NAME)
+                .dimension(DIMENSION)
+                .vectorDataType("half_float")
+                .compressionLevel(compression)
+                .method(KNNJsonIndexMappingsBuilder.Method.builder().methodName("flat").engine("lucene").spaceType("l2").build())
+                .build()
+                .getIndexMapping();
 
-        ResponseException ex = expectThrows(ResponseException.class, () -> createKnnIndex(INDEX_NAME, mapping));
-        assertTrue(ex.getMessage().contains("compression"));
+            // A distinct index per case, so a create that unexpectedly succeeds cannot make the next
+            // iteration fail with "already exists" and hide which level was accepted.
+            final String indexName = INDEX_NAME + "_" + compression;
+            ResponseException ex = expectThrows(ResponseException.class, () -> createKnnIndex(indexName, mapping));
+            assertTrue(compression + " -> " + ex.getMessage(), ex.getMessage().contains("compression"));
+        }
     }
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -665,17 +671,78 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
 
     @SneakyThrows
     public void testHalfFloatHnsw_withUnsupportedCompression_shouldFail() {
-        String mapping = KNNJsonIndexMappingsBuilder.builder()
-            .fieldName(FIELD_NAME)
-            .dimension(DIMENSION)
-            .vectorDataType("half_float")
-            .compressionLevel("4x")
-            .method(KNNJsonIndexMappingsBuilder.Method.builder().methodName("hnsw").engine("lucene").spaceType("l2").build())
-            .build()
-            .getIndexMapping();
+        // half_float supports only 1x and 16x - every level defined against FLOAT's 32 bits is rejected.
+        for (String compression : new String[] { "2x", "4x", "8x", "32x" }) {
+            String mapping = KNNJsonIndexMappingsBuilder.builder()
+                .fieldName(FIELD_NAME)
+                .dimension(DIMENSION)
+                .vectorDataType("half_float")
+                .compressionLevel(compression)
+                .method(KNNJsonIndexMappingsBuilder.Method.builder().methodName("hnsw").engine("lucene").spaceType("l2").build())
+                .build()
+                .getIndexMapping();
+
+            final String indexName = INDEX_NAME + "_" + compression;
+            ResponseException ex = expectThrows(ResponseException.class, () -> createKnnIndex(indexName, mapping));
+            assertTrue(compression + " -> " + ex.getMessage(), ex.getMessage().contains("compression"));
+        }
+    }
+
+    @SneakyThrows
+    public void testHalfFloatHnswOnDisk_indexAndSearch() {
+        // ON_DISK now resolves half_float to x16 (SQ 1-bit), the counterpart of FLOAT's ON_DISK -> x32.
+        String mapping = "{"
+            + "\"properties\":{"
+            + "\""
+            + FIELD_NAME
+            + "\":{"
+            + "\"type\":\"knn_vector\","
+            + "\"dimension\":"
+            + DIMENSION
+            + ","
+            + "\"data_type\":\"half_float\","
+            + "\"mode\":\"on_disk\","
+            + "\"method\":{"
+            + "\"name\":\"hnsw\","
+            + "\"engine\":\"lucene\","
+            + "\"space_type\":\"l2\""
+            + "}}}}";
+        createKnnIndex(INDEX_NAME, mapping);
+
+        addKnnDoc(INDEX_NAME, "1", FIELD_NAME, new Float[] { 1.0f, 2.0f, 3.0f, 4.0f });
+        addKnnDoc(INDEX_NAME, "2", FIELD_NAME, new Float[] { 5.0f, 6.0f, 7.0f, 8.0f });
+        addKnnDoc(INDEX_NAME, "3", FIELD_NAME, new Float[] { 0.1f, 0.2f, 0.3f, 0.4f });
+
+        float[] queryVector = { 0.0f, 0.0f, 0.0f, 0.0f };
+        Response response = searchKNNIndex(INDEX_NAME, buildSearchQuery(FIELD_NAME, 3, queryVector, null), 3);
+        List<KNNResult> results = parseSearchResponse(EntityUtils.toString(response.getEntity()), FIELD_NAME);
+
+        assertEquals(3, results.size());
+    }
+
+    @SneakyThrows
+    public void testHalfFloatHnswOnDiskWithX1_shouldFail() {
+        String mapping = "{"
+            + "\"properties\":{"
+            + "\""
+            + FIELD_NAME
+            + "\":{"
+            + "\"type\":\"knn_vector\","
+            + "\"dimension\":"
+            + DIMENSION
+            + ","
+            + "\"data_type\":\"half_float\","
+            + "\"mode\":\"on_disk\","
+            + "\"compression_level\":\"1x\","
+            + "\"method\":{"
+            + "\"name\":\"hnsw\","
+            + "\"engine\":\"lucene\","
+            + "\"space_type\":\"l2\""
+            + "}}}}";
 
         ResponseException ex = expectThrows(ResponseException.class, () -> createKnnIndex(INDEX_NAME, mapping));
-        assertTrue(ex.getMessage().contains("compression"));
+        assertTrue(ex.getMessage(), ex.getMessage().contains("x1"));
+        assertTrue(ex.getMessage(), ex.getMessage().contains("on_disk"));
     }
 
     // ────────────────────────────────────────────────────────────────────────────

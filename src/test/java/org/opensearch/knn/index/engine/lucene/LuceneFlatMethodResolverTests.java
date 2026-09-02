@@ -291,4 +291,22 @@ public class LuceneFlatMethodResolverTests extends KNNTestCase {
         assertEquals(METHOD_FLAT, resolvedMethodContext.getKnnMethodContext().getMethodComponentContext().getName());
         assertEquals(SpaceType.INNER_PRODUCT, resolvedMethodContext.getKnnMethodContext().getSpaceType());
     }
+
+    public void testResolveMethod_whenHalfFloatWithMode_thenThrows() {
+        for (Mode mode : new Mode[] { Mode.ON_DISK, Mode.IN_MEMORY }) {
+            expectThrows(
+                ValidationException.class,
+                () -> TEST_RESOLVER.resolveMethod(
+                    new KNNMethodContext(KNNEngine.LUCENE, SpaceType.L2, new MethodComponentContext(METHOD_FLAT, java.util.Map.of())),
+                    KNNMethodConfigContext.builder()
+                        .vectorDataType(VectorDataType.HALF_FLOAT)
+                        .mode(mode)
+                        .versionCreated(Version.CURRENT)
+                        .build(),
+                    false,
+                    SpaceType.L2
+                )
+            );
+        }
+    }
 }

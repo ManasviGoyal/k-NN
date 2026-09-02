@@ -115,6 +115,9 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
                 )
             );
         }
+        // Same contradiction FLOAT's validateConfig rejects: asking for disk-optimized storage and then
+        // opting out of compression.
+        validationException = validateCompressionNotx1WhenOnDisk(knnMethodConfigContext, validationException);
         if (validationException != null) {
             throw validationException;
         }
@@ -141,7 +144,7 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
                 knnMethodConfigContext,
                 LuceneHNSWMethod.SUPPORTED_ENCODERS
             )
-            : DEFAULT_COMPRESSION_HALF_FLOAT;
+            : getDataTypeAwareDefaultCompressionLevel(knnMethodConfigContext);
         validateCompressionConflicts(knnMethodConfigContext.getCompressionLevel(), resolvedCompressionLevel);
         return ResolvedMethodContext.builder()
             .knnMethodContext(resolvedKNNMethodContext)
@@ -162,7 +165,9 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
         }
 
         if (knnMethodConfigContext.getVectorDataType() == VectorDataType.HALF_FLOAT) {
-            return knnMethodConfigContext.getCompressionLevel() == CompressionLevel.x16;
+            // x16 is half_float's only SQ-triggering level, and ON_DISK with nothing configured defaults
+            // to it - the half_float counterpart of FLOAT's ON_DISK -> x32.
+            return getDataTypeAwareDefaultCompressionLevel(knnMethodConfigContext) == CompressionLevel.x16;
         }
 
         if (knnMethodConfigContext.getCompressionLevel() == CompressionLevel.x1) {
@@ -182,7 +187,7 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
             return;
         }
 
-        CompressionLevel resolvedCompressionLevel = getDefaultCompressionLevel(knnMethodConfigContext);
+        CompressionLevel resolvedCompressionLevel = getDataTypeAwareDefaultCompressionLevel(knnMethodConfigContext);
         if (resolvedCompressionLevel == CompressionLevel.x1) {
             return;
         }
@@ -229,7 +234,7 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
         if (bitsAlreadySet == false && skipAutoResolve == false) {
             CompressionLevel effectiveCompression = CompressionLevel.isConfigured(knnMethodConfigContext.getCompressionLevel())
                 ? knnMethodConfigContext.getCompressionLevel()
-                : getDefaultCompressionLevel(knnMethodConfigContext);
+                : getDataTypeAwareDefaultCompressionLevel(knnMethodConfigContext);
             boolean useNewDefault = isV360OrLater
                 && LuceneSQEncoder.Bits.fromValue(LUCENE_SCALAR_QUANTIZER_DEFAULT_BITS_AFTER_V360)
                     .getCompressionLevel(knnMethodConfigContext.getVectorDataType()) == effectiveCompression;
@@ -262,5 +267,22 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
 
     private CompressionLevel getDefaultCompressionLevel(KNNMethodConfigContext knnMethodConfigContext) {
         return getDefaultCompressionLevel(knnMethodConfigContext, CompressionLevel.x4);
+    }
+
+    /**
+     * Default compression for {@code knnMethodConfigContext}, expressed in that data type's own terms.
+     * The shared default is measured against FLOAT: ON_DISK resolves to x32, which half_float does not
+     * support - its equivalent "quantize as far as this data type goes" level is x16 (SQ 1-bit on 16-bit
+     * storage). Used everywhere a default is needed, so encoder resolution, bit-width resolution and the
+     * reported compression level cannot disagree.
+     */
+    private CompressionLevel getDataTypeAwareDefaultCompressionLevel(KNNMethodConfigContext knnMethodConfigContext) {
+        if (knnMethodConfigContext.getVectorDataType() != VectorDataType.HALF_FLOAT) {
+            return getDefaultCompressionLevel(knnMethodConfigContext);
+        }
+        if (CompressionLevel.isConfigured(knnMethodConfigContext.getCompressionLevel())) {
+            return knnMethodConfigContext.getCompressionLevel();
+        }
+        return Mode.ON_DISK == knnMethodConfigContext.getMode() ? CompressionLevel.x16 : DEFAULT_COMPRESSION_HALF_FLOAT;
     }
 }
