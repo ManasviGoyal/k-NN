@@ -665,8 +665,8 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
     public void testHalfFloatHnsw_withExplicitEncoder_shouldFail() {
         String mapping = buildHalfFloatHnswSqMapping("l2", 7);
         ResponseException ex = expectThrows(ResponseException.class, () -> createKnnIndex(INDEX_NAME, mapping));
-        assertTrue(ex.getMessage().contains("encoder"));
-        assertTrue(ex.getMessage().contains("compression_level"));
+        assertTrue(ex.getMessage(), ex.getMessage().contains("encoder"));
+        assertTrue(ex.getMessage(), ex.getMessage().contains("compression_level"));
     }
 
     @SneakyThrows
@@ -886,6 +886,132 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
     // Helpers
     // ────────────────────────────────────────────────────────────────────────────
 
+    // ────────────────────────────────────────────────────────────────────────────
+    // HNSW (Faiss engine) - x1 stores FP16 as-is, x16 is SQ 1-bit. Faiss has no flat method for
+    // half_float and no IVF support, so HNSW is the whole surface.
+    // ────────────────────────────────────────────────────────────────────────────
+
+    @SneakyThrows
+    public void testHalfFloatFaissHnswIndex_indexAndSearch() {
+        createKnnIndex(INDEX_NAME, buildHalfFloatFaissHnswMapping("l2", null));
+
+        addKnnDoc(INDEX_NAME, "1", FIELD_NAME, new Float[] { 1.0f, 2.0f, 3.0f, 4.0f });
+        addKnnDoc(INDEX_NAME, "2", FIELD_NAME, new Float[] { 5.0f, 6.0f, 7.0f, 8.0f });
+        addKnnDoc(INDEX_NAME, "3", FIELD_NAME, new Float[] { 0.1f, 0.2f, 0.3f, 0.4f });
+
+        float[] queryVector = { 0.0f, 0.0f, 0.0f, 0.0f };
+        Response response = searchKNNIndex(INDEX_NAME, buildSearchQuery(FIELD_NAME, 3, queryVector, null), 3);
+        List<KNNResult> results = parseSearchResponse(EntityUtils.toString(response.getEntity()), FIELD_NAME);
+
+        assertEquals(3, results.size());
+        assertEquals("3", results.get(0).getDocId());
+    }
+
+    @SneakyThrows
+    public void testHalfFloatFaissHnswIndex_explicitX1() {
+        createKnnIndex(INDEX_NAME, buildHalfFloatFaissHnswMapping("l2", "1x"));
+
+        addKnnDoc(INDEX_NAME, "1", FIELD_NAME, new Float[] { 1.0f, 2.0f, 3.0f, 4.0f });
+        addKnnDoc(INDEX_NAME, "2", FIELD_NAME, new Float[] { 0.1f, 0.2f, 0.3f, 0.4f });
+
+        float[] queryVector = { 0.0f, 0.0f, 0.0f, 0.0f };
+        Response response = searchKNNIndex(INDEX_NAME, buildSearchQuery(FIELD_NAME, 2, queryVector, null), 2);
+        List<KNNResult> results = parseSearchResponse(EntityUtils.toString(response.getEntity()), FIELD_NAME);
+
+        assertEquals(2, results.size());
+        assertEquals("2", results.get(0).getDocId());
+    }
+
+    /** Merge is where the FP16 vectors get rewritten, so exercise it rather than trusting flush alone. */
+    @SneakyThrows
+    public void testHalfFloatFaissHnswSq1BitIndex_forceMerge() {
+        createKnnIndex(INDEX_NAME, buildHalfFloatFaissHnswMapping("l2", "16x"));
+
+        for (int i = 1; i <= 6; i++) {
+            addKnnDoc(INDEX_NAME, String.valueOf(i), FIELD_NAME, new Float[] { (float) i, (float) i, (float) i, (float) i });
+            refreshIndex(INDEX_NAME);
+        }
+        forceMergeKnnIndex(INDEX_NAME, 1);
+
+        float[] queryVector = { 1.0f, 1.0f, 1.0f, 1.0f };
+        Response response = searchKNNIndex(INDEX_NAME, buildSearchQuery(FIELD_NAME, 6, queryVector, null), 6);
+        List<KNNResult> results = parseSearchResponse(EntityUtils.toString(response.getEntity()), FIELD_NAME);
+
+        assertEquals(6, results.size());
+    }
+
+    @SneakyThrows
+    public void testHalfFloatFaissHnsw_withUnsupportedCompression_shouldFail() {
+        for (String compression : new String[] { "2x", "4x", "8x", "32x" }) {
+            // A distinct index per case: a create that unexpectedly succeeds would otherwise make the
+            // next iteration fail with "already exists" and hide which level was actually accepted.
+            final String indexName = INDEX_NAME + "_" + compression;
+            ResponseException ex = expectThrows(
+                ResponseException.class,
+                () -> createKnnIndex(indexName, buildHalfFloatFaissHnswMapping("l2", compression))
+            );
+            assertTrue(compression + " -> " + ex.getMessage(), ex.getMessage().contains("compression"));
+        }
+    }
+
+    @SneakyThrows
+    public void testHalfFloatFaissHnsw_withExplicitEncoder_shouldFail() {
+        ResponseException ex = expectThrows(
+            ResponseException.class,
+            () -> createKnnIndex(INDEX_NAME + "_encoder", buildHalfFloatFaissHnswSqMapping("l2", 1))
+        );
+        assertTrue(ex.getMessage(), ex.getMessage().contains("encoder"));
+        assertTrue(ex.getMessage(), ex.getMessage().contains("compression_level"));
+    }
+
+    @SneakyThrows
+    public void testHalfFloatFaissIvf_shouldFail() {
+        String mapping = KNNJsonIndexMappingsBuilder.builder()
+            .fieldName(FIELD_NAME)
+            .dimension(DIMENSION)
+            .vectorDataType("half_float")
+            .method(KNNJsonIndexMappingsBuilder.Method.builder().methodName("ivf").engine("faiss").spaceType("l2").build())
+            .build()
+            .getIndexMapping();
+
+        expectThrows(ResponseException.class, () -> createKnnIndex(INDEX_NAME, mapping));
+    }
+
+    private String buildHalfFloatFaissHnswMapping(String spaceType, String compressionLevel) throws Exception {
+        KNNJsonIndexMappingsBuilder.KNNJsonIndexMappingsBuilderBuilder builder = KNNJsonIndexMappingsBuilder.builder()
+            .fieldName(FIELD_NAME)
+            .dimension(DIMENSION)
+            .vectorDataType("half_float")
+            .method(KNNJsonIndexMappingsBuilder.Method.builder().methodName("hnsw").engine("faiss").spaceType(spaceType).build());
+        if (compressionLevel != null) {
+            builder.compressionLevel(compressionLevel);
+        }
+        return builder.build().getIndexMapping();
+    }
+
+    private String buildHalfFloatFaissHnswSqMapping(String spaceType, int bits) {
+        return "{"
+            + "\"properties\":{"
+            + "\""
+            + FIELD_NAME
+            + "\":{"
+            + "\"type\":\"knn_vector\","
+            + "\"dimension\":"
+            + DIMENSION
+            + ","
+            + "\"data_type\":\"half_float\","
+            + "\"method\":{"
+            + "\"name\":\"hnsw\","
+            + "\"engine\":\"faiss\","
+            + "\"space_type\":\""
+            + spaceType
+            + "\","
+            + "\"parameters\":{\"encoder\":{\"name\":\"sq\",\"parameters\":{\"bits\":"
+            + bits
+            + "}}}"
+            + "}}}}";
+    }
+
     private String buildHalfFloatMapping(String spaceType) throws Exception {
         return KNNJsonIndexMappingsBuilder.builder()
             .fieldName(FIELD_NAME)
@@ -1071,11 +1197,11 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
             + DIMENSION
             + ","
             + "\"data_type\":\"half_float\","
+            + "\"compression_level\":\"1x\","
             + "\"method\":{"
             + "\"name\":\"hnsw\","
             + "\"engine\":\"faiss\","
-            + "\"space_type\":\"l2\","
-            + "\"parameters\":{\"encoder\":{\"name\":\"flat\"}}"
+            + "\"space_type\":\"l2\""
             + "}"
             + "}"
             + "}}";
@@ -1135,11 +1261,11 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
             + DIMENSION
             + ","
             + "\"data_type\":\"half_float\","
+            + "\"compression_level\":\"16x\","
             + "\"method\":{"
             + "\"name\":\"hnsw\","
             + "\"engine\":\"faiss\","
-            + "\"space_type\":\"l2\","
-            + "\"parameters\":{\"encoder\":{\"name\":\"sq\",\"parameters\":{\"bits\":1}}}"
+            + "\"space_type\":\"l2\""
             + "}"
             + "}"
             + "}}";

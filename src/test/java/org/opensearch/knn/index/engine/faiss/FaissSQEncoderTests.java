@@ -342,11 +342,43 @@ public class FaissSQEncoderTests extends KNNTestCase {
         );
     }
 
+    // bits=1 on half_float takes 16 bits down to 1, so it pairs with x16. x32 is what the same encoder
+    // achieves on FLOAT's 32 bits and is not a valid pairing here.
     public void testValidateDirectly_whenBits1WithHalfFloat_thenNoException() {
         FaissSQEncoder encoder = new FaissSQEncoder();
         encoder.validate(
             buildMethodContext(Map.of(SQ_BITS, 1)),
-            buildConfigContext(Version.CURRENT, CompressionLevel.x32, VectorDataType.HALF_FLOAT)
+            buildConfigContext(Version.CURRENT, CompressionLevel.x16, VectorDataType.HALF_FLOAT)
+        );
+    }
+
+    public void testValidateDirectly_whenBits1WithHalfFloatAndX32_thenThrows() {
+        FaissSQEncoder encoder = new FaissSQEncoder();
+        ValidationException e = expectThrows(
+            ValidationException.class,
+            () -> encoder.validate(
+                buildMethodContext(Map.of(SQ_BITS, 1)),
+                buildConfigContext(Version.CURRENT, CompressionLevel.x32, VectorDataType.HALF_FLOAT)
+            )
+        );
+        assertTrue(e.getMessage().contains("16x"));
+    }
+
+    public void testCalculateCompressionLevel_whenBits1_thenX16ForHalfFloatAndX32ForFloat() {
+        FaissSQEncoder encoder = new FaissSQEncoder();
+        assertEquals(
+            CompressionLevel.x16,
+            encoder.calculateCompressionLevel(
+                new MethodComponentContext(ENCODER_SQ, Map.of(SQ_BITS, 1)),
+                buildConfigContext(Version.CURRENT, CompressionLevel.NOT_CONFIGURED, VectorDataType.HALF_FLOAT)
+            )
+        );
+        assertEquals(
+            CompressionLevel.x32,
+            encoder.calculateCompressionLevel(
+                new MethodComponentContext(ENCODER_SQ, Map.of(SQ_BITS, 1)),
+                buildConfigContext(Version.CURRENT, CompressionLevel.NOT_CONFIGURED, VectorDataType.FLOAT)
+            )
         );
     }
 

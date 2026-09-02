@@ -103,6 +103,20 @@ public class FaissSQEncoder implements Encoder {
         return METHOD_COMPONENT;
     }
 
+    /**
+     * Compression {@code bits} achieves for {@code vectorDataType}. {@link QuantizationBits} maps a bit
+     * width to one compression level measured against FLOAT's 32 bits, so bits=1 is x32 there. Taking
+     * HALF_FLOAT's 16 bits down to 1 saves 16x, not 32x. Mirrors {@code LuceneSQEncoder.Bits}, which
+     * takes the data type for the same reason. Shared by the two callers that need it so they cannot
+     * disagree - calculateCompressionLevel reports it, validate checks against it.
+     */
+    private static CompressionLevel compressionLevelFor(QuantizationBits bits, VectorDataType vectorDataType) {
+        if (bits == QuantizationBits.ONE && vectorDataType == VectorDataType.HALF_FLOAT) {
+            return CompressionLevel.x16;
+        }
+        return bits.getCompressionLevel();
+    }
+
     @Override
     public CompressionLevel calculateCompressionLevel(
         MethodComponentContext methodComponentContext,
@@ -111,7 +125,10 @@ public class FaissSQEncoder implements Encoder {
         if (methodComponentContext != null && methodComponentContext.getParameters().containsKey(SQ_BITS)) {
             Object bitsObj = methodComponentContext.getParameters().get(SQ_BITS);
             if (bitsObj instanceof Integer) {
-                return QuantizationBits.fromValue((Integer) bitsObj).getCompressionLevel();
+                return compressionLevelFor(
+                    QuantizationBits.fromValue((Integer) bitsObj),
+                    knnMethodConfigContext == null ? null : knnMethodConfigContext.getVectorDataType()
+                );
             }
         }
         // Legacy path — type=fp16 is x2
@@ -214,7 +231,10 @@ public class FaissSQEncoder implements Encoder {
 
             CompressionLevel configuredCompression = configContext.getCompressionLevel();
             if (CompressionLevel.isConfigured(configuredCompression)) {
-                CompressionLevel expectedCompression = QuantizationBits.fromValue(bits).getCompressionLevel();
+                CompressionLevel expectedCompression = compressionLevelFor(
+                    QuantizationBits.fromValue(bits),
+                    configContext.getVectorDataType()
+                );
                 if (configuredCompression != expectedCompression) {
                     validationException.addValidationError(
                         String.format(
