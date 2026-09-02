@@ -941,6 +941,72 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
     }
 
     @SneakyThrows
+    public void testHalfFloatFaissHnswOnDisk_indexAndSearch() {
+        // ON_DISK resolves half_float to x16 (SQ 1-bit), the counterpart of FLOAT's ON_DISK -> x32.
+        createKnnIndex(INDEX_NAME, buildHalfFloatFaissHnswOnDiskMapping("l2", null));
+
+        addKnnDoc(INDEX_NAME, "1", FIELD_NAME, new Float[] { 1.0f, 2.0f, 3.0f, 4.0f });
+        addKnnDoc(INDEX_NAME, "2", FIELD_NAME, new Float[] { 5.0f, 6.0f, 7.0f, 8.0f });
+        addKnnDoc(INDEX_NAME, "3", FIELD_NAME, new Float[] { 0.1f, 0.2f, 0.3f, 0.4f });
+
+        float[] queryVector = { 0.0f, 0.0f, 0.0f, 0.0f };
+        Response response = searchKNNIndex(INDEX_NAME, buildSearchQuery(FIELD_NAME, 3, queryVector, null), 3);
+        List<KNNResult> results = parseSearchResponse(EntityUtils.toString(response.getEntity()), FIELD_NAME);
+
+        assertEquals(3, results.size());
+    }
+
+    // Faiss FLOAT accepts ON_DISK + 1x, so half_float does too - matching its own engine, not Lucene's.
+    @SneakyThrows
+    public void testHalfFloatFaissHnswOnDiskWithX1_indexAndSearch() {
+        createKnnIndex(INDEX_NAME, buildHalfFloatFaissHnswOnDiskMapping("l2", "1x"));
+
+        addKnnDoc(INDEX_NAME, "1", FIELD_NAME, new Float[] { 1.0f, 2.0f, 3.0f, 4.0f });
+        addKnnDoc(INDEX_NAME, "2", FIELD_NAME, new Float[] { 0.1f, 0.2f, 0.3f, 0.4f });
+
+        float[] queryVector = { 0.0f, 0.0f, 0.0f, 0.0f };
+        Response response = searchKNNIndex(INDEX_NAME, buildSearchQuery(FIELD_NAME, 2, queryVector, null), 2);
+        List<KNNResult> results = parseSearchResponse(EntityUtils.toString(response.getEntity()), FIELD_NAME);
+
+        assertEquals(2, results.size());
+        assertEquals("2", results.get(0).getDocId());
+    }
+
+    @SneakyThrows
+    public void testHalfFloatFaissHnswOnDisk_withUnsupportedCompression_shouldFail() {
+        for (String compression : new String[] { "2x", "4x", "8x", "32x" }) {
+            final String indexName = INDEX_NAME + "_ondisk_" + compression;
+            ResponseException ex = expectThrows(
+                ResponseException.class,
+                () -> createKnnIndex(indexName, buildHalfFloatFaissHnswOnDiskMapping("l2", compression))
+            );
+            assertTrue(compression + " -> " + ex.getMessage(), ex.getMessage().contains("compression"));
+        }
+    }
+
+    private String buildHalfFloatFaissHnswOnDiskMapping(String spaceType, String compressionLevel) {
+        return "{"
+            + "\"properties\":{"
+            + "\""
+            + FIELD_NAME
+            + "\":{"
+            + "\"type\":\"knn_vector\","
+            + "\"dimension\":"
+            + DIMENSION
+            + ","
+            + "\"data_type\":\"half_float\","
+            + "\"mode\":\"on_disk\","
+            + (compressionLevel == null ? "" : "\"compression_level\":\"" + compressionLevel + "\",")
+            + "\"method\":{"
+            + "\"name\":\"hnsw\","
+            + "\"engine\":\"faiss\","
+            + "\"space_type\":\""
+            + spaceType
+            + "\""
+            + "}}}}";
+    }
+
+    @SneakyThrows
     public void testHalfFloatFaissHnsw_withUnsupportedCompression_shouldFail() {
         for (String compression : new String[] { "2x", "4x", "8x", "32x" }) {
             // A distinct index per case: a create that unexpectedly succeeds would otherwise make the

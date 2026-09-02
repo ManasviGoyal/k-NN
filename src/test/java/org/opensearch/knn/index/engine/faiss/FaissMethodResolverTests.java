@@ -274,10 +274,36 @@ public class FaissMethodResolverTests extends KNNTestCase {
 
     // ON_DISK is where x32 could leak in: AbstractMethodResolver#getDefaultCompressionLevel returns x32
     // for any 3.6+ on-disk field with no compression configured, and x32 has no half_float meaning.
-    public void testResolveMethod_whenHalfFloatOnDiskUnconfigured_thenX1NotX32() {
+    // ON_DISK means "quantize as far as this data type goes": x16 for half_float, the counterpart of
+    // FLOAT's ON_DISK -> x32. x32 itself is never reachable here - half_float does not support it.
+    public void testResolveMethod_whenHalfFloatOnDiskUnconfigured_thenX16WithSQOneBit() {
         ResolvedMethodContext resolvedMethodContext = TEST_RESOLVER.resolveMethod(
             null,
             halfFloatConfig().mode(Mode.ON_DISK).build(),
+            false,
+            SpaceType.L2
+        );
+
+        validateResolveMethodContext(resolvedMethodContext, CompressionLevel.x16, SpaceType.L2, ENCODER_SQ, false);
+        assertEquals(1, encoderParams(resolvedMethodContext).get(SQ_BITS));
+    }
+
+    // Faiss FLOAT accepts ON_DISK + x1 (unlike Lucene HNSW), so half_float matches its own engine.
+    public void testResolveMethod_whenHalfFloatOnDiskWithX1_thenX1() {
+        ResolvedMethodContext resolvedMethodContext = TEST_RESOLVER.resolveMethod(
+            null,
+            halfFloatConfig().mode(Mode.ON_DISK).compressionLevel(CompressionLevel.x1).build(),
+            false,
+            SpaceType.L2
+        );
+
+        validateResolveMethodContext(resolvedMethodContext, CompressionLevel.x1, SpaceType.L2, ENCODER_FLAT, false);
+    }
+
+    public void testResolveMethod_whenHalfFloatInMemoryUnconfigured_thenX1() {
+        ResolvedMethodContext resolvedMethodContext = TEST_RESOLVER.resolveMethod(
+            null,
+            halfFloatConfig().mode(Mode.IN_MEMORY).build(),
             false,
             SpaceType.L2
         );

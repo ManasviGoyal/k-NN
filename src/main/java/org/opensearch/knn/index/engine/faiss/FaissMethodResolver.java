@@ -18,6 +18,7 @@ import org.opensearch.knn.index.engine.MethodComponentContext;
 import org.opensearch.knn.index.engine.ResolvedMethodContext;
 import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.mapper.CompressionLevel;
+import org.opensearch.knn.index.mapper.Mode;
 
 import java.util.HashMap;
 import java.util.Locale;
@@ -98,8 +99,9 @@ public class FaissMethodResolver extends AbstractMethodResolver {
     // AbstractMethodResolver.shouldEncoderBeResolved() only auto-resolves an encoder for FLOAT, so
     // half_float would fall through to the flat encoder and resolve to x1 - conflicting with a
     // configured x16. Widen just that data-type check here, the same way LuceneHNSWMethodResolver does.
-    // x16 is checked specifically because it is half_float's only SQ-triggering level, unlike FLOAT
-    // where any configured level besides x1 (or ON_DISK with none configured) resolves an encoder.
+    // x16 is half_float's only SQ-triggering level, unlike FLOAT where any configured level besides x1
+    // resolves an encoder. ON_DISK with nothing configured also resolves one: it means "quantize as far
+    // as this data type goes", which is x16 for half_float, the counterpart of FLOAT's ON_DISK -> x32.
     @Override
     protected boolean shouldEncoderBeResolved(KNNMethodContext knnMethodContext, KNNMethodConfigContext knnMethodConfigContext) {
         if (isEncoderSpecified(knnMethodContext)) {
@@ -107,7 +109,11 @@ public class FaissMethodResolver extends AbstractMethodResolver {
         }
 
         if (knnMethodConfigContext.getVectorDataType() == VectorDataType.HALF_FLOAT) {
-            return knnMethodConfigContext.getCompressionLevel() == CompressionLevel.x16;
+            if (knnMethodConfigContext.getCompressionLevel() == CompressionLevel.x16) {
+                return true;
+            }
+            return Mode.ON_DISK == knnMethodConfigContext.getMode()
+                && CompressionLevel.isConfigured(knnMethodConfigContext.getCompressionLevel()) == false;
         }
 
         return super.shouldEncoderBeResolved(knnMethodContext, knnMethodConfigContext);
