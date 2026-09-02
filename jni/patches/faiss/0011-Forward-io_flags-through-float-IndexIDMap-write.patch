@@ -1,0 +1,30 @@
+From 41bb94c2ea6dfff9ab6341ed50c6bcc0481844de Mon Sep 17 00:00:00 2001
+From: Manasvi Goyal <mg.manasvi@gmail.com>
+Date: Wed, 26 Aug 2026 11:39:13 -0700
+Subject: [PATCH] Forward io_flags through float IndexIDMap write branch.
+
+Without this, IO_FLAG_SKIP_STORAGE never reaches the wrapped IndexHNSW
+writer for graph-only output, since write_index() dispatches to the
+IndexIDMap branch first (our on-disk indexes are always wrapped in
+IndexIDMap) and that branch's recursive write_index(idxmap->index, f)
+call previously dropped io_flags, silently defaulting to 0.
+---
+ faiss/impl/index_write.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/faiss/impl/index_write.cpp b/faiss/impl/index_write.cpp
+index 6946f0bc2..b2df5bab6 100644
+--- a/faiss/impl/index_write.cpp
++++ b/faiss/impl/index_write.cpp
+@@ -765,7 +765,7 @@ void write_index(const Index* idx, IOWriter* f, int io_flags) {
+         // no need to store additional info for IndexIDMap2
+         WRITE1(h);
+         write_index_header(idxmap, f);
+-        write_index(idxmap->index, f);
++        write_index(idxmap->index, f, io_flags);
+         WRITEVECTOR(idxmap->id_map);
+     } else if (const IndexHNSW* idxhnsw = dynamic_cast<const IndexHNSW*>(idx)) {
+         uint32_t h = dynamic_cast<const IndexHNSWFlat*>(idx) ? fourcc("IHNf")
+-- 
+2.55.0
+

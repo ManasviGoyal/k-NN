@@ -197,13 +197,14 @@ public class Faiss1040ScalarQuantizedKnnVectorsFormatTests extends KNNTestCase {
     @SneakyThrows
     public void testFieldsReader_scorerIsPrefetchable() {
         try (MMapDirectory dir = new MMapDirectory(createTempDir())) {
+            final Faiss1040ScalarQuantizedKnnVectorsFormat format = new Faiss1040ScalarQuantizedKnnVectorsFormat();
             SegmentReadState readState = KNN1040ScalarQuantizedTestUtils.writeQuantizedVectors(
                 dir,
-                Faiss1040ScalarQuantizedKnnVectorsFormat.getFaissSqFlatFormat(),
+                format.getFaissSqFlatFormat(),
                 random()
             );
 
-            try (KnnVectorsReader rawReader = new Faiss1040ScalarQuantizedKnnVectorsFormat().fieldsReader(readState)) {
+            try (KnnVectorsReader rawReader = format.fieldsReader(readState)) {
                 assertTrue(
                     "Expected Faiss1040ScalarQuantizedKnnVectorsReader but was: " + rawReader.getClass().getSimpleName(),
                     rawReader instanceof Faiss1040ScalarQuantizedKnnVectorsReader
@@ -222,5 +223,24 @@ public class Faiss1040ScalarQuantizedKnnVectorsFormatTests extends KNNTestCase {
                 );
             }
         }
+    }
+
+    // --- Coverage: half-float SQ format (16x) ---
+
+    public void testGetName_whenHalfFloatSqFormat_thenDistinctFromFloatSqFormat() {
+        String floatName = new Faiss1040ScalarQuantizedKnnVectorsFormat().getName();
+        String halfFloatName = new Faiss1040HalfFloatScalarQuantizedKnnVectorsFormat().getName();
+        assertEquals("Faiss1040ScalarQuantizedKnnVectorsFormat", floatName);
+        assertEquals("Faiss1040HalfFloatScalarQuantizedKnnVectorsFormat", halfFloatName);
+        assertNotEquals("SPI names must differ or the codec cannot resolve both formats", floatName, halfFloatName);
+    }
+
+    public void testHalfFloatSqFormat_thenFlatDelegateIsHalfFloatTyped() {
+        // The 16x case must write an fp16 .vec, not an fp32 one.
+        assertNotNull(new Faiss1040HalfFloatScalarQuantizedKnnVectorsFormat().getFaissSqFlatFormat());
+        assertNotEquals(
+            new Faiss1040ScalarQuantizedKnnVectorsFormat().getFaissSqFlatFormat().toString(),
+            new Faiss1040HalfFloatScalarQuantizedKnnVectorsFormat().getFaissSqFlatFormat().toString()
+        );
     }
 }
