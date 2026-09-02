@@ -136,7 +136,11 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
         // FLOAT's x1 resolves to. This dedicated dispatch exists for the encoder-resolution and
         // validation differences above, not because the two data types share any storage at x1.
         CompressionLevel resolvedCompressionLevel = isEncoderSpecified(resolvedKNNMethodContext)
-            ? resolveCompressionLevelFromMethodContext(resolvedKNNMethodContext, knnMethodConfigContext, LuceneHNSWMethod.SUPPORTED_ENCODERS)
+            ? resolveCompressionLevelFromMethodContext(
+                resolvedKNNMethodContext,
+                knnMethodConfigContext,
+                LuceneHNSWMethod.SUPPORTED_ENCODERS
+            )
             : DEFAULT_COMPRESSION_HALF_FLOAT;
         validateCompressionConflicts(knnMethodConfigContext.getCompressionLevel(), resolvedCompressionLevel);
         return ResolvedMethodContext.builder()
