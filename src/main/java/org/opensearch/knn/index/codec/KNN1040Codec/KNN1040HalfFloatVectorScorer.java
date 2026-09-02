@@ -117,10 +117,12 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
      * Builds {@link UpdateableRandomVectorScorer}s for HNSW graph construction that read raw FP16
      * bytes directly for candidate comparisons via {@link HalfFloatRandomVectorScorer} - the
      * same decode-free path search already uses. The "current" graph node set via
-     * {@link UpdateableRandomVectorScorer#setScoringOrdinal} is decoded once (via
-     * {@link KNN1040HalfFloatFlatVectorsValues#vectorValue}) to build the native search context;
-     * every subsequent candidate comparison against it stays fully byte-based - one decode per graph
-     * node instead of one per graph edge.
+     * {@link UpdateableRandomVectorScorer#setScoringOrdinal} is named to native by ordinal
+     * ({@link HalfFloatRandomVectorScorer#setTargetOrdinal}) when the vectors are mapped, so it is
+     * read and widened on the native side; every candidate comparison against it then stays fully
+     * byte-based. Without a mapping there is nothing for native to read, so the target is decoded here
+     * ({@link KNN1040HalfFloatFlatVectorsValues#vectorValue}) - one decode per graph node, still never
+     * one per graph edge.
      */
     private static final class HalfFloatRandomVectorScorerSupplier implements RandomVectorScorerSupplier {
         // Used for both raw-byte candidate reads (readRawVectorBytes) and decoding the "current"
@@ -148,13 +150,16 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
 
                 @Override
                 public void setScoringOrdinal(int node) throws IOException {
-                    float[] target = vectorValues.vectorValue(node);
                     if (delegate == null) {
-                        delegate = new HalfFloatRandomVectorScorer(vectorValues, target, nativeType, addressAndSize);
+                        // Reused for every subsequent node - only the target is repointed below.
+                        delegate = new HalfFloatRandomVectorScorer(vectorValues, nativeType, addressAndSize);
                         prefetchableDelegate = new PrefetchableRandomVectorScorer(delegate);
+                    }
+                    if (delegate.usesMmapAddress()) {
+                        delegate.setTargetOrdinal(node);
                     } else {
-                        // Reuse the existing scorer/buffer instead of allocating a fresh one for every graph node
-                        delegate.setTarget(target);
+                        // Nothing mapped for native to read the target from, so decode it here.
+                        delegate.setTarget(vectorValues.vectorValue(node));
                     }
                 }
 
@@ -217,6 +222,19 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
             SimdVectorComputeService.SimilarityFunctionType nativeFunctionType,
             long[] addressAndSize
         ) {
+            this(values, nativeFunctionType, addressAndSize);
+            setTarget(target);
+        }
+
+        /**
+         * Leaves the target unset, for callers that follow up with {@link #setTargetOrdinal} - graph
+         * build, which names its target by ordinal rather than holding its values.
+         */
+        HalfFloatRandomVectorScorer(
+            KNN1040HalfFloatFlatVectorsValues values,
+            SimdVectorComputeService.SimilarityFunctionType nativeFunctionType,
+            long[] addressAndSize
+        ) {
             super(values);
             this.values = values;
             this.nativeFunctionType = nativeFunctionType;
@@ -225,7 +243,6 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
             if (!usesMmapAddress) {
                 this.vectorBytesBuffer = new byte[values.byteSize() * BULK_SCORE_BATCH_SIZE];
             }
-            setTarget(target);
         }
 
         // Repoints the native search context at a new target vector, reusing this scorer's buffers -
@@ -237,6 +254,21 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
                 usesMmapAddress ? addressAndSize : new long[0],
                 nativeFunctionType.ordinal()
             );
+        }
+
+        /**
+         * Repoints the native search context at the vector stored at {@code node}, naming it by ordinal
+         * so native reads and widens it straight from the mapping. Saves the Java-side FP16 decode and
+         * the copy of the widened target back across JNI that {@link #setTarget} needs - which matters
+         * because graph build repoints the target once per diversity check, not once per inserted
+         * vector. Requires mmap; {@link #usesMmapAddress} is the caller's guard.
+         */
+        void setTargetOrdinal(int node) {
+            SimdVectorComputeService.saveSearchContextFromVectorId(node, values.dimension(), addressAndSize, nativeFunctionType.ordinal());
+        }
+
+        boolean usesMmapAddress() {
+            return usesMmapAddress;
         }
 
         @Override

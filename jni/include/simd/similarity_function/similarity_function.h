@@ -67,6 +67,22 @@ namespace knn_jni::simd::similarity_function {
                    int32_t numAddressAndSize,
                    int32_t nativeFunctionTypeOrd);
 
+        // Like `saveSearchContext`, but takes the query as the id of a vector already present in the
+        // mapped region instead of as a caller-supplied buffer. The FP16 vector is read straight from
+        // mapped memory and widened into the context's FP32 query buffer here, so callers holding only
+        // an ordinal (HNSW graph build, which repoints the scorer at a graph node for every diversity
+        // check) don't have to widen it themselves and hand the result back across JNI.
+        //
+        // Only valid for the FP16 function types - the SQ types store vectors in a layout this does not
+        // know how to widen - and only when the vectors are mapped, since there is nowhere else to read
+        // the query from.
+        static SimdVectorSearchContext* saveSearchContextFromVectorId(
+                   int32_t internalVectorId,
+                   int32_t dimension,
+                   int64_t* mmapAddressAndSize,
+                   int32_t numAddressAndSize,
+                   int32_t nativeFunctionTypeOrd);
+
         // Return thread static storage it's holding.
         static SimdVectorSearchContext* getSearchContext();
 
@@ -85,6 +101,16 @@ namespace knn_jni::simd::similarity_function {
       private:
         // Select similarity function based on the function type.
         static SimilarityFunction* selectSimilarityFunction(NativeSimilarityFunctionType nativeFunctionType);
+
+        // Shared setup behind the two save*SearchContext entry points: sizes the SIMD-aligned query
+        // buffer, selects the similarity function and maps the vector region, leaving the query buffer's
+        // contents to the caller.
+        static SimdVectorSearchContext* prepareSearchContext(
+                   int32_t queryByteSize,
+                   int32_t dimension,
+                   int64_t* mmapAddressAndSize,
+                   int32_t numAddressAndSize,
+                   int32_t nativeFunctionTypeOrd);
     };
 }
 

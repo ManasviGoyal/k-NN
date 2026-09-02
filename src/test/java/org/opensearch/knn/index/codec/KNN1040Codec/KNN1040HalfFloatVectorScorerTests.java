@@ -34,6 +34,9 @@ import java.lang.reflect.Field;
 
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 public class KNN1040HalfFloatVectorScorerTests extends KNNTestCase {
@@ -326,6 +329,117 @@ public class KNN1040HalfFloatVectorScorerTests extends KNNTestCase {
     private void assertFallbackTierUsed(VectorSimilarityFunction similarityFunction, boolean simdSupported) {
         RandomVectorScorerSupplier result = getRandomVectorScorerSupplier(similarityFunction, simdSupported);
         assertNotEquals(NATIVE_TIER_CLASS_NAME, result.getClass().getSimpleName());
+    }
+
+    /**
+     * The point of naming the target by ordinal: with the vectors mapped, native reads and widens the
+     * target itself, so graph build never decodes it on the Java side. {@code vectorValue} is the only
+     * decoding path, so zero invocations across repeated {@code setScoringOrdinal} calls means the
+     * decode is genuinely gone - and the scores must still come out right.
+     */
+    @SneakyThrows
+    public void testScorer_setScoringOrdinalWithMmap_targetsByOrdinalWithoutDecoding() {
+        try (Directory dir = new MMapDirectory(createTempDir())) {
+            int dimension = 4;
+            float[][] vectors = { { 1f, 2f, 3f, 4f }, { 5f, 6f, 7f, 8f }, { 2f, 2f, 2f, 2f } };
+            KNN1040HalfFloatFlatVectorsValues values = writeAndOpenValues(dir, "ordinal-target.vec", vectors, dimension);
+            long[] addressAndSize = MemorySegmentAddressExtractorUtil.tryExtractAddressAndSize(
+                values.getSlice(),
+                0,
+                values.getSlice().length()
+            );
+            assertNotNull("test host must support mmap address extraction", addressAndSize);
+
+            KNN1040HalfFloatFlatVectorsValues spiedValues = spy(values);
+            final KNN1040HalfFloatVectorScorer scorer = new KNN1040HalfFloatVectorScorer(mock(FlatVectorsScorer.class));
+            RandomVectorScorerSupplier supplier = scorer.getRandomVectorScorerSupplier(
+                VectorSimilarityFunction.EUCLIDEAN,
+                new MMapFloatVectorValues(spiedValues, addressAndSize)
+            );
+            assertEquals(NATIVE_TIER_CLASS_NAME, supplier.getClass().getSimpleName());
+
+            UpdateableRandomVectorScorer candidateScorer = supplier.scorer();
+            candidateScorer.setScoringOrdinal(2);
+            assertEquals(expectedEuclidean(vectors, dimension, 2, 1), candidateScorer.score(1), 1e-3f);
+
+            // Repointing at a second node must go through the same path, not just the first call.
+            candidateScorer.setScoringOrdinal(0);
+            assertEquals(expectedEuclidean(vectors, dimension, 0, 1), candidateScorer.score(1), 1e-3f);
+
+            verify(spiedValues, never()).vectorValue(anyInt());
+        }
+    }
+
+    /**
+     * Without a mapping there is nothing for native to read the target from, so the target has to be
+     * decoded here - the fallback has to stay correct, and stay reachable.
+     */
+    @SneakyThrows
+    public void testScorer_setScoringOrdinalWithoutMmap_decodesTargetOnHeap() {
+        try (Directory dir = new ByteBuffersDirectory()) {
+            int dimension = 4;
+            float[][] vectors = { { 1f, 2f, 3f, 4f }, { 5f, 6f, 7f, 8f }, { 2f, 2f, 2f, 2f } };
+            KNN1040HalfFloatFlatVectorsValues spiedValues = spy(writeAndOpenValues(dir, "heap-target.vec", vectors, dimension));
+
+            final KNN1040HalfFloatVectorScorer scorer = new KNN1040HalfFloatVectorScorer(mock(FlatVectorsScorer.class));
+            RandomVectorScorerSupplier supplier;
+            try (MockedStatic<SimdFp16> mockedSimdFp16 = Mockito.mockStatic(SimdFp16.class)) {
+                mockedSimdFp16.when(SimdFp16::isSIMDSupported).thenReturn(true);
+                supplier = scorer.getRandomVectorScorerSupplier(VectorSimilarityFunction.EUCLIDEAN, spiedValues);
+            }
+
+            UpdateableRandomVectorScorer candidateScorer = supplier.scorer();
+            candidateScorer.setScoringOrdinal(2);
+
+            assertEquals(expectedEuclidean(vectors, dimension, 2, 1), candidateScorer.score(1), 1e-3f);
+            verify(spiedValues).vectorValue(2);
+        }
+    }
+
+    /**
+     * Native widening of the target has to agree with the Java decode it replaced, or the two scoring
+     * paths would disagree on scores for identical data.
+     */
+    @SneakyThrows
+    public void testSetTargetOrdinal_scoresIdenticallyToDecodedTarget() {
+        try (Directory dir = new MMapDirectory(createTempDir())) {
+            int dimension = 8;
+            float[][] vectors = new float[6][dimension];
+            for (int i = 0; i < vectors.length; i++) {
+                for (int j = 0; j < dimension; j++) {
+                    vectors[i][j] = randomFloat() * 10f;
+                }
+            }
+            KNN1040HalfFloatFlatVectorsValues values = writeAndOpenValues(dir, "parity.vec", vectors, dimension);
+            long[] addressAndSize = MemorySegmentAddressExtractorUtil.tryExtractAddressAndSize(
+                values.getSlice(),
+                0,
+                values.getSlice().length()
+            );
+            assertNotNull("test host must support mmap address extraction", addressAndSize);
+
+            KNN1040HalfFloatVectorScorer.HalfFloatRandomVectorScorer halfFloatScorer =
+                new KNN1040HalfFloatVectorScorer.HalfFloatRandomVectorScorer(
+                    values,
+                    SimdVectorComputeService.SimilarityFunctionType.FP16_L2,
+                    addressAndSize
+                );
+
+            for (int targetOrd = 0; targetOrd < vectors.length; targetOrd++) {
+                // The decoded target is the FP16 round trip of vectors[targetOrd], which is exactly what
+                // native reads out of the mapping - so the two must agree bit for bit, not just closely.
+                halfFloatScorer.setTarget(values.vectorValue(targetOrd));
+                float[] viaDecodedTarget = new float[vectors.length];
+                for (int node = 0; node < vectors.length; node++) {
+                    viaDecodedTarget[node] = halfFloatScorer.score(node);
+                }
+
+                halfFloatScorer.setTargetOrdinal(targetOrd);
+                for (int node = 0; node < vectors.length; node++) {
+                    assertEquals("target ord " + targetOrd + ", node " + node, viaDecodedTarget[node], halfFloatScorer.score(node), 0f);
+                }
+            }
+        }
     }
 
     @SneakyThrows

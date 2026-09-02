@@ -65,6 +65,29 @@ public class SimdVectorComputeService {
     public native static void saveSearchContext(float[] query, long[] addressAndSize, int nativeFunctionTypeOrd);
 
     /**
+     * Like {@link #saveSearchContext}, but names the query by the id of a vector already present in the
+     * mapped region rather than passing its values. Native reads the FP16 vector straight from the
+     * mapping and widens it there, so callers that only hold an ordinal - HNSW graph build repoints the
+     * scorer at a graph node for every diversity check - avoid decoding it themselves and handing the
+     * result back across JNI.
+     *
+     * <p>Only valid for the FP16 function types, and only when the vectors are memory mapped: there is
+     * nowhere else for native to read the query from. Callers without a mapping must use
+     * {@link #saveSearchContext}.
+     *
+     * @param internalVectorId       Id of the vector to use as the query
+     * @param dimension              Vector dimension
+     * @param addressAndSize         Vector chunks, in the layout {@link #saveSearchContext} documents
+     * @param nativeFunctionTypeOrd  Similarity function type index
+     */
+    public native static void saveSearchContextFromVectorId(
+        int internalVectorId,
+        int dimension,
+        long[] addressAndSize,
+        int nativeFunctionTypeOrd
+    );
+
+    /**
      * Perform similarity search on a single vector.
      *
      * @param internalVectorId Vector id

@@ -25,6 +25,14 @@ JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_SimdVectorComputeService_save
 
 /*
  * Class:     org_opensearch_knn_jni_SimdVectorComputeService
+ * Method:    saveSearchContextFromVectorId
+ * Signature: (II[JI)V
+ */
+JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_SimdVectorComputeService_saveSearchContextFromVectorId
+  (JNIEnv *, jclass, jint, jint, jlongArray, jint);
+
+/*
+ * Class:     org_opensearch_knn_jni_SimdVectorComputeService
  * Method:    scoreSingleVector
  * Signature: (JI)F
  */

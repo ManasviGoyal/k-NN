@@ -94,6 +94,29 @@ JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_SimdVectorComputeService_save
     }
 }
 
+JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_SimdVectorComputeService_saveSearchContextFromVectorId
+  (JNIEnv *env, jclass clazz, const jint internalVectorId, const jint dimension,
+   jlongArray addressAndSize, const jint nativeFunctionTypeOrd) {
+    try {
+      // Get mmap address and size
+      const jsize mmapAddressAndSizeLength = JNI_UTIL.GetJavaLongArrayLength(env, addressAndSize);
+      jlong* mmapAddressAndSize = static_cast<jlong*>(JNI_UTIL.GetPrimitiveArrayCritical(env, addressAndSize, nullptr));
+      knn_jni::JNIReleaseElements releaseAddressAndSize {[=]{
+        JNI_UTIL.ReleasePrimitiveArrayCritical(env, addressAndSize, mmapAddressAndSize, 0);
+      }};
+
+      // Unlike saveSearchContext, no query buffer crosses the boundary here - the query is the vector
+      // already sitting at `internalVectorId` in the mapped region, so native reads and widens it.
+      SimilarityFunction::saveSearchContextFromVectorId(
+          internalVectorId,
+          dimension,
+          reinterpret_cast<int64_t*>(mmapAddressAndSize), mmapAddressAndSizeLength,
+          nativeFunctionTypeOrd);
+    } catch (...) {
+      JNI_UTIL.CatchCppExceptionAndThrowJava(env);
+    }
+}
+
 JNIEXPORT jfloat JNICALL Java_org_opensearch_knn_jni_SimdVectorComputeService_scoreSimilarity
   (JNIEnv *env, jclass clazz, const jint internalVectorId) {
 

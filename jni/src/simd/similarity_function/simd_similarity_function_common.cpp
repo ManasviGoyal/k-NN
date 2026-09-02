@@ -8,6 +8,7 @@
 #include "platform_defs.h"
 #include "simd/similarity_function/similarity_function.h"
 #include "faiss/impl/ScalarQuantizer.h"
+#include "faiss/utils/fp16.h"
 #include "jni_util.h"
 
 using knn_jni::simd::similarity_function::SimdVectorSearchContext;
@@ -166,8 +167,12 @@ thread_local SimdVectorSearchContext THREAD_LOCAL_SIMD_VEC_SRCH_CTX {};
 //
 // SimilarityFunction
 //
-SimdVectorSearchContext* SimilarityFunction::saveSearchContext(
-           uint8_t* queryPtr,
+// Sets up everything a search needs except the contents of the query buffer: allocates (or reuses) a
+// SIMD-aligned buffer of `queryByteSize`, selects the similarity function, and maps the vector region.
+// Callers fill the returned context's `queryVectorSimdAligned` afterwards. Safe to fill after the Faiss
+// distance computer has been handed the buffer below, because `set_query` retains the pointer rather
+// than copying out of it.
+SimdVectorSearchContext* SimilarityFunction::prepareSearchContext(
            int32_t queryByteSize,
            int32_t dimension,
            int64_t* mmapAddressAndSize,
@@ -197,9 +202,6 @@ SimdVectorSearchContext* SimilarityFunction::saveSearchContext(
         THREAD_LOCAL_SIMD_VEC_SRCH_CTX.queryVectorSimdAligned = alignedPtr;
         THREAD_LOCAL_SIMD_VEC_SRCH_CTX.queryVectorByteSize = queryByteSize;
     }
-
-    // Copy query bytes
-    std::memcpy(THREAD_LOCAL_SIMD_VEC_SRCH_CTX.queryVectorSimdAligned, queryPtr, queryByteSize);
 
     // Set similarity function
     if (nativeFunctionTypeOrd == static_cast<int32_t>(NativeSimilarityFunctionType::FP16_MAXIMUM_INNER_PRODUCT)) {
@@ -275,6 +277,62 @@ SimdVectorSearchContext* SimilarityFunction::saveSearchContext(
 
     // Return thread_local object
     return &THREAD_LOCAL_SIMD_VEC_SRCH_CTX;
+}
+
+SimdVectorSearchContext* SimilarityFunction::saveSearchContext(
+           uint8_t* queryPtr,
+           int32_t queryByteSize,
+           int32_t dimension,
+           int64_t* mmapAddressAndSize,
+           int32_t numAddressAndSize,
+           int32_t nativeFunctionTypeOrd) {
+    SimdVectorSearchContext* srchContext = prepareSearchContext(
+        queryByteSize, dimension, mmapAddressAndSize, numAddressAndSize, nativeFunctionTypeOrd);
+
+    // Copy query bytes
+    std::memcpy(srchContext->queryVectorSimdAligned, queryPtr, queryByteSize);
+
+    return srchContext;
+}
+
+SimdVectorSearchContext* SimilarityFunction::saveSearchContextFromVectorId(
+           const int32_t internalVectorId,
+           const int32_t dimension,
+           int64_t* mmapAddressAndSize,
+           const int32_t numAddressAndSize,
+           const int32_t nativeFunctionTypeOrd) {
+    if (nativeFunctionTypeOrd != static_cast<int32_t>(NativeSimilarityFunctionType::FP16_MAXIMUM_INNER_PRODUCT)
+        && nativeFunctionTypeOrd != static_cast<int32_t>(NativeSimilarityFunctionType::FP16_L2)) {
+        throw std::runtime_error(
+            std::string("saveSearchContextFromVectorId only supports the FP16 function types, but got ")
+            + std::to_string(nativeFunctionTypeOrd) + ".");
+    }
+
+    if (numAddressAndSize <= 0) {
+        throw std::runtime_error(
+            "saveSearchContextFromVectorId needs a mapped region to read the query vector from, "
+            "but none was given.");
+    }
+
+    // The query buffer holds the widened vector, so it is FP32-sized even though the source is FP16.
+    SimdVectorSearchContext* srchContext = prepareSearchContext(
+        dimension * static_cast<int32_t>(sizeof(float)),
+        dimension,
+        mmapAddressAndSize,
+        numAddressAndSize,
+        nativeFunctionTypeOrd);
+
+    // Read the query straight out of the mapped region and widen it in place. getVectorPointer copies
+    // into tmpBuffer only for a vector that straddles two mapped regions; otherwise this reads the
+    // mapping directly.
+    const uint8_t* fp16Query = srchContext->getVectorPointer(internalVectorId);
+    const uint16_t* fp16Values = reinterpret_cast<const uint16_t*>(fp16Query);
+    float* fp32Query = reinterpret_cast<float*>(srchContext->queryVectorSimdAligned);
+    for (int32_t i = 0 ; i < dimension ; ++i) {
+        fp32Query[i] = faiss::decode_fp16(fp16Values[i]);
+    }
+
+    return srchContext;
 }
 
 SimdVectorSearchContext* SimilarityFunction::getSearchContext() {
