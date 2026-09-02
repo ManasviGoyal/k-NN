@@ -136,6 +136,78 @@ public class MemOptimizedNativeIndexBuildStrategyTests extends OpenSearchTestCas
         }
     }
 
+    // --- Coverage: skipFlat is unconditional for Faiss half_float (no MOS-setting gate) ---
+
+    @SneakyThrows
+    public void testBuildAndWrite_whenHalfFloat_thenSkipsFlatStorage() {
+        assertSkipFlat(VectorDataType.HALF_FLOAT, true);
+    }
+
+    @SneakyThrows
+    public void testBuildAndWrite_whenFloat_thenDoesNotSkipFlatStorage() {
+        assertSkipFlat(VectorDataType.FLOAT, false);
+    }
+
+    @SneakyThrows
+    public void testBuildAndWrite_whenByte_thenDoesNotSkipFlatStorage() {
+        assertSkipFlat(VectorDataType.BYTE, false);
+    }
+
+    /**
+     * Half_float always skips native flat storage, with no dependency on the memory-optimized-search
+     * index setting: half_float resolves to alwaysUseMemoryOptimizedSearch(), so the reconstruction path
+     * is guaranteed. Every other data type must keep writing full storage, unchanged.
+     */
+    @SneakyThrows
+    private void assertSkipFlat(VectorDataType vectorDataType, boolean expectedSkipFlat) {
+        List<float[]> vectorValues = List.of(new float[] { 1, 2 }, new float[] { 2, 3 }, new float[] { 3, 4 });
+        final TestVectorValues.PreDefinedFloatVectorValues randomVectorValues = new TestVectorValues.PreDefinedFloatVectorValues(
+            vectorValues
+        );
+        final KNNVectorValues<byte[]> knnVectorValues = KNNVectorValuesFactory.getVectorValues(VectorDataType.FLOAT, randomVectorValues);
+
+        try (
+            MockedStatic<JNIService> mockedJNIService = Mockito.mockStatic(JNIService.class);
+            MockedStatic<OffHeapVectorTransferFactory> mockedOffHeapVectorTransferFactory = Mockito.mockStatic(
+                OffHeapVectorTransferFactory.class
+            )
+        ) {
+            mockedJNIService.when(() -> JNIService.initIndex(3, 2, Map.of("index", "param"), KNNEngine.FAISS)).thenReturn(100L);
+
+            OffHeapVectorTransfer offHeapVectorTransfer = mock(OffHeapVectorTransfer.class);
+            mockedOffHeapVectorTransferFactory.when(() -> OffHeapVectorTransferFactory.getVectorTransfer(vectorDataType, 8, 3))
+                .thenReturn(offHeapVectorTransfer);
+            IndexOutputWithBuffer indexOutputWithBuffer = Mockito.mock(IndexOutputWithBuffer.class);
+
+            when(offHeapVectorTransfer.getTransferLimit()).thenReturn(3);
+            when(offHeapVectorTransfer.transfer(org.mockito.ArgumentMatchers.any(), eq(false))).thenReturn(false);
+            when(offHeapVectorTransfer.flush(false)).thenReturn(true);
+            when(offHeapVectorTransfer.getVectorAddress()).thenReturn(200L);
+
+            BuildIndexParams buildIndexParams = BuildIndexParams.builder()
+                .field("test_field")
+                .indexOutputWithBuffer(indexOutputWithBuffer)
+                .knnEngine(KNNEngine.FAISS)
+                .vectorDataType(vectorDataType)
+                .indexParameters(Map.of("index", "param"))
+                .knnVectorValuesSupplier(() -> knnVectorValues)
+                .totalLiveDocs((int) knnVectorValues.totalLiveDocs())
+                .build();
+
+            MemOptimizedNativeIndexBuildStrategy.getInstance().buildAndWriteIndex(buildIndexParams);
+
+            mockedJNIService.verify(
+                () -> JNIService.writeIndex(
+                    eq(indexOutputWithBuffer),
+                    eq(100L),
+                    eq(KNNEngine.FAISS),
+                    eq(Map.of("index", "param")),
+                    eq(expectedSkipFlat)
+                )
+            );
+        }
+    }
+
     @SneakyThrows
     public void testBuildAndWrite_withQuantization() {
         // Given

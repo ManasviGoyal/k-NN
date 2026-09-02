@@ -12,6 +12,7 @@ import org.apache.lucene.codecs.hnsw.FlatVectorsReader;
 import org.apache.lucene.index.FieldInfo;
 import org.opensearch.knn.common.FieldInfoExtractor;
 import org.opensearch.knn.index.SpaceType;
+import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.engine.Encoder;
 import org.opensearch.knn.memoryoptsearch.faiss.binary.FaissBinaryHnswIndex;
 import org.opensearch.knn.memoryoptsearch.faiss.binary.FaissBinaryIndex;
@@ -31,13 +32,16 @@ public class FaissFlatIndexFactory {
      * indices where flat storage was skipped (IO_FLAG_SKIP_STORAGE). Returns {@code null} if the field
      * does not require externally-provided flat storage.
      *
-     * <p>Currently supports SQ 1-bit. To add support for other flat storage types (e.g., fp32 flat),
-     * add new conditions here.
+     * <p>Supports SQ 1-bit and flat + half_float. To add support for other flat storage types, add
+     * new conditions here.
      */
     static FaissIndex createFlatIndex(final FieldInfo fieldInfo, final FlatVectorsReader flatVectorsReader) {
         if (FieldInfoExtractor.isSQField(fieldInfo)
             && FieldInfoExtractor.extractSQConfig(fieldInfo).getBits() == Encoder.QuantizationBits.ONE.getValue()) {
             return new FaissScalarQuantizedFlatIndex(flatVectorsReader, fieldInfo.getName());
+        }
+        if (FieldInfoExtractor.extractVectorDataType(fieldInfo) == VectorDataType.HALF_FLOAT) {
+            return new FaissHalfFloatFlatIndex(flatVectorsReader, fieldInfo.getName());
         }
         return null;
     }
@@ -114,6 +118,27 @@ public class FaissFlatIndexFactory {
             cagraIndex.setFlatVectors(flatIndex);
             // No space type override needed — float CAGRA reads the correct metric type
             // from readCommonHeader() in doLoad().
+            return;
+        }
+
+        // Plain (non-CAGRA) HNSW path: flat + half_float skips native flat storage via
+        // IO_FLAG_SKIP_STORAGE, so the graph's storage slot is an empty index that we wire here.
+        if (nested instanceof FaissHNSWIndex hnswIndex && FaissEmptyIndex.isEmptyIndex(hnswIndex.getFlatVectors())) {
+            final FaissIndex flatIndex = createFlatIndex(fieldInfo, flatVectorsReader);
+            if (flatIndex == null) {
+                throw new IllegalStateException(
+                    String.format(
+                        Locale.ROOT,
+                        "%s found for field [%s] but %s returned null — cannot wire flat storage for HNSW index.",
+                        FaissEmptyIndex.class.getName(),
+                        fieldInfo.getName(),
+                        FaissFlatIndexFactory.class.getName()
+                    )
+                );
+            }
+            hnswIndex.setFlatVectors(flatIndex);
+            // No space type override needed - FaissHNSWIndex reads the correct metric type
+            // from readCommonHeader() in doLoad(), same as the CAGRA case above.
         }
     }
 }

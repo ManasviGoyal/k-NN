@@ -435,6 +435,57 @@ public class ResolvedIndexSpecTests extends KNNTestCase {
         assertTrue(spec.supportsRemoteIndexBuild());
     }
 
+    // --- Coverage: alwaysUseMemoryOptimizedSearch forced for Faiss half_float ---
+
+    public void testAlwaysUseMemoryOptimizedSearch_whenFaissHalfFloatFlat_thenForced() {
+        // Faiss half_float skips native flat storage, so MOS is mandatory for the index to be readable.
+        assertTrue(
+            "Faiss flat + half_float must always use memory optimized search",
+            baseFaiss().vectorDataType(VectorDataType.HALF_FLOAT)
+                .encoderType(Encoder.EncoderType.FLAT)
+                .build()
+                .alwaysUseMemoryOptimizedSearch()
+        );
+    }
+
+    public void testAlwaysUseMemoryOptimizedSearch_whenFaissHalfFloatSqOneBit_thenForced() {
+        assertTrue(
+            "Faiss sq,1-bit + half_float must always use memory optimized search",
+            baseFaissSQ1Bit().vectorDataType(VectorDataType.HALF_FLOAT).build().alwaysUseMemoryOptimizedSearch()
+        );
+    }
+
+    public void testAlwaysUseMemoryOptimizedSearch_whenFaissHalfFloatIvf_thenNotForced() {
+        // Defensive: FaissIVFMethod does not list HALF_FLOAT today, but the carve-out must hold if added.
+        assertFalse(
+            "Faiss IVF + half_float must not force memory optimized search (MOS reader cannot load IVF)",
+            baseFaiss().vectorDataType(VectorDataType.HALF_FLOAT).methodName(METHOD_IVF).build().alwaysUseMemoryOptimizedSearch()
+        );
+    }
+
+    public void testAlwaysUseMemoryOptimizedSearch_whenLuceneHalfFloat_thenNotForced() {
+        // The half_float clause is Faiss-scoped; Lucene half_float keeps following the index setting.
+        assertFalse(
+            "Lucene half_float must not force memory optimized search",
+            baseFaiss().engine(KNNEngine.LUCENE).vectorDataType(VectorDataType.HALF_FLOAT).build().alwaysUseMemoryOptimizedSearch()
+        );
+    }
+
+    public void testAlwaysUseMemoryOptimizedSearch_whenFloat_thenUnchanged() {
+        // Regression guard: no FLOAT configuration may start forcing MOS because of the half_float work.
+        assertFalse(
+            "Faiss flat + FLOAT must be unchanged",
+            baseFaiss().encoderType(Encoder.EncoderType.FLAT).build().alwaysUseMemoryOptimizedSearch()
+        );
+        assertFalse(
+            "Faiss sq,16 + FLOAT must be unchanged",
+            baseFaiss().encoderType(Encoder.EncoderType.SQ)
+                .quantizationBits(Encoder.QuantizationBits.SIXTEEN)
+                .build()
+                .alwaysUseMemoryOptimizedSearch()
+        );
+    }
+
     private ResolvedIndexSpec.ResolvedIndexSpecBuilder baseFaiss() {
         return ResolvedIndexSpec.builder()
             .engine(KNNEngine.FAISS)

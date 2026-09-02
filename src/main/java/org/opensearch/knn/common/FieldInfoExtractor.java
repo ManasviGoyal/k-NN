@@ -202,4 +202,5 @@ public class FieldInfoExtractor {
         }
         return SQConfigParser.fromCsv(configString);
     }
+
 }
