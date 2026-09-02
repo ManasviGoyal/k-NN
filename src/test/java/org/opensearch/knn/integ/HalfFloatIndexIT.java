@@ -655,13 +655,27 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
         assertEquals("0", results.get(0).getDocId());
     }
 
-    // half_float only supports the SQ 1-bit path (bits=1); bits=7 (int7 quantization) is FLOAT-only,
-    // enforced in LuceneHNSWMethodResolver.validateEncoderParams().
     @SneakyThrows
-    public void testHalfFloatHnsw_withSqBits7_shouldFail() {
+    public void testHalfFloatHnsw_withExplicitEncoder_shouldFail() {
         String mapping = buildHalfFloatHnswSqMapping("l2", 7);
         ResponseException ex = expectThrows(ResponseException.class, () -> createKnnIndex(INDEX_NAME, mapping));
-        assertTrue(ex.getMessage().contains("half_float"));
+        assertTrue(ex.getMessage().contains("encoder"));
+        assertTrue(ex.getMessage().contains("compression_level"));
+    }
+
+    @SneakyThrows
+    public void testHalfFloatHnsw_withUnsupportedCompression_shouldFail() {
+        String mapping = KNNJsonIndexMappingsBuilder.builder()
+            .fieldName(FIELD_NAME)
+            .dimension(DIMENSION)
+            .vectorDataType("half_float")
+            .compressionLevel("4x")
+            .method(KNNJsonIndexMappingsBuilder.Method.builder().methodName("hnsw").engine("lucene").spaceType("l2").build())
+            .build()
+            .getIndexMapping();
+
+        ResponseException ex = expectThrows(ResponseException.class, () -> createKnnIndex(INDEX_NAME, mapping));
+        assertTrue(ex.getMessage().contains("compression"));
     }
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -870,7 +884,26 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
     }
 
     private String buildHalfFloatHnswSq1BitMapping(String spaceType) {
-        return buildHalfFloatHnswSqMapping(spaceType, 1);
+        return "{"
+            + "\"properties\":{"
+            + "\""
+            + FIELD_NAME
+            + "\":{"
+            + "\"type\":\"knn_vector\","
+            + "\"dimension\":"
+            + DIMENSION
+            + ","
+            + "\"data_type\":\"half_float\","
+            + "\"compression_level\":\"16x\","
+            + "\"method\":{"
+            + "\"name\":\"hnsw\","
+            + "\"engine\":\"lucene\","
+            + "\"space_type\":\""
+            + spaceType
+            + "\""
+            + "}"
+            + "}"
+            + "}}";
     }
 
     private String buildHalfFloatHnswSqMapping(String spaceType, int bits) {
@@ -911,13 +944,11 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
             + DIMENSION
             + ","
             + "\"data_type\":\"half_float\","
+            + "\"compression_level\":\"16x\","
             + "\"method\":{"
             + "\"name\":\"hnsw\","
             + "\"engine\":\"lucene\","
-            + "\"space_type\":\"l2\","
-            + "\"parameters\":{"
-            + "\"encoder\":{\"name\":\"sq\",\"parameters\":{\"bits\":1}}"
-            + "}"
+            + "\"space_type\":\"l2\""
             + "}"
             + "},"
             + "\""
