@@ -56,6 +56,7 @@ import org.opensearch.knn.KNNTestCase;
 import org.opensearch.knn.common.KNNConstants;
 import org.opensearch.knn.index.SpaceType;
 import org.opensearch.knn.index.VectorDataType;
+import org.opensearch.knn.index.codec.nativeindex.NativeIndexBuildStrategyFactory;
 import org.opensearch.knn.index.codec.util.UnitTestCodec;
 import org.opensearch.knn.index.engine.KNNEngine;
 import org.opensearch.knn.index.engine.qframe.QuantizationConfig;
@@ -318,6 +319,25 @@ public class NativeEngines990KnnVectorsFormatTests extends KNNTestCase {
         assertTrue(format3.toString().contains("approximateThreshold=300"));
     }
 
+    public void testFlatVectorsFormat_whenUseHalfFloatVectorFormatTrue_thenUsesFp16Delegate() {
+        NativeEngines990KnnVectorsFormat format = new NativeEngines990KnnVectorsFormat(100, new NativeIndexBuildStrategyFactory(), true);
+        assertTrue(format.toString().contains("KNN1040HalfFloatFlatVectorsFormat"));
+    }
+
+    public void testFlatVectorsFormat_whenUseHalfFloatVectorFormatFalse_thenUsesFp32Delegate() {
+        NativeEngines990KnnVectorsFormat format = new NativeEngines990KnnVectorsFormat(100, new NativeIndexBuildStrategyFactory(), false);
+        assertFalse(format.toString().contains("KNN1040HalfFloatFlatVectorsFormat"));
+    }
+
+    public void testFlatVectorsFormat_whenLegacyConstructors_thenDefaultToFp32Delegate() {
+        assertFalse(new NativeEngines990KnnVectorsFormat().toString().contains("KNN1040HalfFloatFlatVectorsFormat"));
+        assertFalse(new NativeEngines990KnnVectorsFormat(100).toString().contains("KNN1040HalfFloatFlatVectorsFormat"));
+        assertFalse(
+            new NativeEngines990KnnVectorsFormat(100, new NativeIndexBuildStrategyFactory()).toString()
+                .contains("KNN1040HalfFloatFlatVectorsFormat")
+        );
+    }
+
     private List<String> getFilesFromSegment(Directory dir, String fileFormat) throws IOException {
         return Arrays.stream(dir.listAll()).filter(x -> x.contains(fileFormat)).collect(Collectors.toList());
     }
@@ -370,5 +390,19 @@ public class NativeEngines990KnnVectorsFormatTests extends KNNTestCase {
             SpaceType.L2.getKnnVectorSimilarityFunction().getVectorSimilarityFunction()
         );
         return nativeVectorField;
+    }
+
+    // --- Coverage: distinct SPI names, required for the half-float formats to be resolvable ---
+
+    public void testGetName_whenHalfFloatFormat_thenDistinctFromFloatFormat() {
+        String floatName = new NativeEngines990KnnVectorsFormat().getName();
+        String halfFloatName = new NativeEngines990HalfFloatKnnVectorsFormat().getName();
+        assertEquals("NativeEngines990KnnVectorsFormat", floatName);
+        assertEquals("NativeEngines990HalfFloatKnnVectorsFormat", halfFloatName);
+        assertNotEquals("SPI names must differ or the codec cannot resolve both formats", floatName, halfFloatName);
+    }
+
+    public void testHalfFloatFormat_thenUsesFp16Delegate() {
+        assertTrue(new NativeEngines990HalfFloatKnnVectorsFormat().toString().contains("KNN1040HalfFloatFlatVectorsFormat"));
     }
 }

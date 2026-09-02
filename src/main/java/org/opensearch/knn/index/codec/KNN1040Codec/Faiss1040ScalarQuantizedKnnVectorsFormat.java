@@ -14,6 +14,7 @@ import org.apache.lucene.index.SegmentReadState;
 import org.apache.lucene.index.SegmentWriteState;
 import com.google.common.annotations.VisibleForTesting;
 import org.opensearch.knn.index.KNNSettings;
+import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.codec.nativeindex.NativeIndexBuildStrategyFactory;
 import org.opensearch.knn.index.engine.KNNEngine;
 
@@ -38,17 +39,14 @@ public class Faiss1040ScalarQuantizedKnnVectorsFormat extends KnnVectorsFormat {
 
     private static final String FORMAT_NAME = "Faiss1040ScalarQuantizedKnnVectorsFormat";
 
-    // Shared across all format instances; KNN1040ScalarQuantizedVectorsFormat is stateless.
     // TODO : We have to make it scalable for other encoding types, not limit this on `ScalarEncoding.SINGLE_BIT_QUERY_NIBBLE`.
-    private static final KNN1040ScalarQuantizedVectorsFormat faissSqFlatFormat = new KNN1040ScalarQuantizedVectorsFormat(
-        ScalarEncoding.SINGLE_BIT_QUERY_NIBBLE
-    );
+    private final KNN1040ScalarQuantizedVectorsFormat faissSqFlatFormat;
 
     private final NativeIndexBuildStrategyFactory nativeIndexBuildStrategyFactory;
     private final int approximateThreshold;
 
     @VisibleForTesting
-    static KNN1040ScalarQuantizedVectorsFormat getFaissSqFlatFormat() {
+    KNN1040ScalarQuantizedVectorsFormat getFaissSqFlatFormat() {
         return faissSqFlatFormat;
     }
 
@@ -60,9 +58,18 @@ public class Faiss1040ScalarQuantizedKnnVectorsFormat extends KnnVectorsFormat {
         final int approximateThreshold,
         final NativeIndexBuildStrategyFactory nativeIndexBuildStrategyFactory
     ) {
+        this(approximateThreshold, nativeIndexBuildStrategyFactory, VectorDataType.FLOAT);
+    }
+
+    Faiss1040ScalarQuantizedKnnVectorsFormat(
+        final int approximateThreshold,
+        final NativeIndexBuildStrategyFactory nativeIndexBuildStrategyFactory,
+        final VectorDataType vectorDataType
+    ) {
         super(FORMAT_NAME);
         this.approximateThreshold = approximateThreshold;
         this.nativeIndexBuildStrategyFactory = nativeIndexBuildStrategyFactory;
+        this.faissSqFlatFormat = new KNN1040ScalarQuantizedVectorsFormat(ScalarEncoding.SINGLE_BIT_QUERY_NIBBLE, vectorDataType);
     }
 
     @Override
@@ -97,6 +104,15 @@ public class Faiss1040ScalarQuantizedKnnVectorsFormat extends KnnVectorsFormat {
     @Override
     public int getMaxDimensions(String fieldName) {
         return KNNEngine.getMaxDimensionByEngine(KNNEngine.FAISS);
+    }
+
+    /**
+     * Overridden so {@link Faiss1040HalfFloatScalarQuantizedKnnVectorsFormat} gets a distinct SPI
+     * name automatically, without needing its own name constant - see that class for why this matters.
+     */
+    @Override
+    public String getName() {
+        return getClass().getSimpleName();
     }
 
     @Override
