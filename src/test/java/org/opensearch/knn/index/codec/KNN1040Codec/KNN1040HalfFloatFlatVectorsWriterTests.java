@@ -434,10 +434,11 @@ public class KNN1040HalfFloatFlatVectorsWriterTests extends KNNTestCase {
 
     /**
      * Exercises {@code mergeOneFlatVectorField}, which delegates to
-     * {@code KnnVectorsWriter.MergedVectorValues.mergeFloatVectorValues} to combine several source
-     * readers' vectors in final merged-segment doc order. The source readers are hand-built (mocked
-     * {@link KnnVectorsReader}s backed by plain in-memory {@link FloatVectorValues}) rather than real
-     * {@code KNN1040HalfFloatFlatVectorsReader} instances, since the reader side isn't part of this PR.
+     * {@link MergeOptimizedHalfFloatVector} to combine several source readers' vectors in final
+     * merged-segment doc order. The source readers are hand-built (mocked {@link KnnVectorsReader}s
+     * backed by plain in-memory {@link FloatVectorValues}), so they carry no FP16 bytes to copy and
+     * this covers the encoding fallback; {@code MergeOptimizedHalfFloatVectorTests} covers the
+     * raw-byte path against real FP16 segments.
      */
     @SneakyThrows
     public void testMergeOneFlatVectorField_mergesVectorsFromMultipleSourceReadersInOrder() {
