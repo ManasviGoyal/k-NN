@@ -136,11 +136,12 @@ public class MemOptimizedNativeIndexBuildStrategyTests extends OpenSearchTestCas
         }
     }
 
-    // --- Coverage: skipFlat is unconditional for Faiss half_float (no MOS-setting gate) ---
+    // --- Coverage: flat storage is never skipped here for any data type - only SQ 1-bit dedupes,
+    // and that goes through MemOptimizedScalarQuantizedIndexBuildStrategy instead ---
 
     @SneakyThrows
-    public void testBuildAndWrite_whenHalfFloat_thenSkipsFlatStorage() {
-        assertSkipFlat(VectorDataType.HALF_FLOAT, true);
+    public void testBuildAndWrite_whenHalfFloat_thenDoesNotSkipFlatStorage() {
+        assertSkipFlat(VectorDataType.HALF_FLOAT, false);
     }
 
     @SneakyThrows
@@ -153,11 +154,6 @@ public class MemOptimizedNativeIndexBuildStrategyTests extends OpenSearchTestCas
         assertSkipFlat(VectorDataType.BYTE, false);
     }
 
-    /**
-     * Half_float always skips native flat storage, with no dependency on the memory-optimized-search
-     * index setting: half_float resolves to alwaysUseMemoryOptimizedSearch(), so the reconstruction path
-     * is guaranteed. Every other data type must keep writing full storage, unchanged.
-     */
     @SneakyThrows
     private void assertSkipFlat(VectorDataType vectorDataType, boolean expectedSkipFlat) {
         List<float[]> vectorValues = List.of(new float[] { 1, 2 }, new float[] { 2, 3 }, new float[] { 3, 4 });

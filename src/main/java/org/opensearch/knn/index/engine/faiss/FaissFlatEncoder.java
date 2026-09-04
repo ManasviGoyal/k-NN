@@ -32,12 +32,17 @@ public class FaissFlatEncoder implements Encoder {
 
     private final static MethodComponent METHOD_COMPONENT = MethodComponent.Builder.builder(KNNConstants.ENCODER_FLAT)
         .setKnnLibraryIndexingContextGenerator(
-            ((methodComponent, methodComponentContext, knnMethodConfigContext) -> MethodAsMapBuilder.builder(
-                KNNConstants.FAISS_FLAT_DESCRIPTION,
-                methodComponent,
-                methodComponentContext,
-                knnMethodConfigContext
-            ).build())
+            ((methodComponent, methodComponentContext, knnMethodConfigContext) -> {
+                // half_float's native type is already fp16, so "flat" (no quantization) builds an
+                // IndexScalarQuantizer(QT_fp16) instead of IndexFlat: fp32 -> fp16 there is a lossless
+                // cast (see ScalarQuantizer's QuantizerFP16), not a lossy quantization, and it halves
+                // native storage vs. promoting to fp32. Matches FLOAT's own flat: full, unconditional
+                // storage on both .vec and .faiss, just fp16 instead of fp32 on both sides.
+                String description = knnMethodConfigContext.getVectorDataType() == VectorDataType.HALF_FLOAT
+                    ? KNNConstants.FAISS_SQ_DESCRIPTION + KNNConstants.FAISS_SQ_ENCODER_FP16
+                    : KNNConstants.FAISS_FLAT_DESCRIPTION;
+                return MethodAsMapBuilder.builder(description, methodComponent, methodComponentContext, knnMethodConfigContext).build();
+            })
         )
         .addSupportedDataTypes(SUPPORTED_DATA_TYPES)
         .build();

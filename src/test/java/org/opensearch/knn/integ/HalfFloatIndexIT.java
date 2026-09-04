@@ -17,6 +17,7 @@ import org.opensearch.index.query.QueryBuilder;
 import org.opensearch.knn.KNNJsonIndexMappingsBuilder;
 import org.opensearch.knn.KNNRestTestCase;
 import org.opensearch.knn.KNNResult;
+import org.opensearch.knn.index.KNNSettings;
 import org.opensearch.knn.index.SpaceType;
 
 import java.util.HashMap;
@@ -1238,6 +1239,37 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
             .build()
             .getIndexMapping();
         createKnnIndex(INDEX_NAME, mapping);
+
+        addKnnDoc(INDEX_NAME, "1", FIELD_NAME, new Float[] { 1.0f, 2.0f, 3.0f, 4.0f });
+        addKnnDoc(INDEX_NAME, "2", FIELD_NAME, new Float[] { 5.0f, 6.0f, 7.0f, 8.0f });
+        addKnnDoc(INDEX_NAME, "3", FIELD_NAME, new Float[] { 0.1f, 0.2f, 0.3f, 0.4f });
+
+        float[] queryVector = { 0.0f, 0.0f, 0.0f, 0.0f };
+        Response response = searchKNNIndex(INDEX_NAME, buildSearchQuery(FIELD_NAME, 3, queryVector, null), 3);
+        String responseBody = EntityUtils.toString(response.getEntity());
+        assertEquals(3, parseHits(responseBody));
+    }
+
+    // memory_optimized_search defaults to false and nothing above sets it, so every prior Faiss flat
+    // test exercises classic (non-MOS) search only - flat (x1) no longer forces MOS the way sq,1-bit
+    // does, so this is the only place MOS-enabled read of a real fp16 IndexScalarQuantizer .faiss
+    // section (dispatched via the "IxSQ" tag, same reader FLOAT's sq,fp16 already uses) gets covered.
+    @SneakyThrows
+    public void testHalfFloatWithFaissFlat_memoryOptimizedSearchEnabled_indexAndSearch() {
+        String mapping = KNNJsonIndexMappingsBuilder.builder()
+            .fieldName(FIELD_NAME)
+            .dimension(DIMENSION)
+            .vectorDataType("half_float")
+            .method(KNNJsonIndexMappingsBuilder.Method.builder().methodName("hnsw").engine("faiss").spaceType("l2").build())
+            .build()
+            .getIndexMapping();
+        Settings settings = Settings.builder()
+            .put("number_of_shards", 1)
+            .put("number_of_replicas", 0)
+            .put("index.knn", true)
+            .put(KNNSettings.MEMORY_OPTIMIZED_KNN_SEARCH_MODE, true)
+            .build();
+        createKnnIndex(INDEX_NAME, settings, mapping);
 
         addKnnDoc(INDEX_NAME, "1", FIELD_NAME, new Float[] { 1.0f, 2.0f, 3.0f, 4.0f });
         addKnnDoc(INDEX_NAME, "2", FIELD_NAME, new Float[] { 5.0f, 6.0f, 7.0f, 8.0f });

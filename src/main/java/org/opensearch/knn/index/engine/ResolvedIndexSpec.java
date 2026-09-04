@@ -100,8 +100,7 @@ public final class ResolvedIndexSpec {
      * reader cannot load, so forcing memory optimized search for them would fail at query time.
      */
     public boolean alwaysUseMemoryOptimizedSearch() {
-        final boolean isFaissHalfFloat = engine == KNNEngine.FAISS && vectorDataType == VectorDataType.HALF_FLOAT;
-        return (isSQOneBit() || isFaissHalfFloat) && METHOD_IVF.equals(methodName) == false;
+        return isSQOneBit() && METHOD_IVF.equals(methodName) == false;
     }
 
     /**

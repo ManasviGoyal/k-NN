@@ -7,7 +7,6 @@ package org.opensearch.knn.index.codec.nativeindex;
 
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
-import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.codec.nativeindex.model.BuildIndexParams;
 import org.opensearch.knn.index.codec.transfer.OffHeapVectorTransfer;
 import org.opensearch.knn.index.engine.KNNEngine;
@@ -121,15 +120,11 @@ final class MemOptimizedNativeIndexBuildStrategy implements NativeIndexBuildStra
                 transferredDocIds.clear();
             }
 
-            // Write vector
+            // Write vector. Flat storage (float or half_float) is never skipped here - only SQ 1-bit
+            // dedupes against the Lucene .vec copy, and that goes through
+            // MemOptimizedScalarQuantizedIndexBuildStrategy instead.
             AccessController.doPrivileged((PrivilegedAction<Void>) () -> {
-                JNIService.writeIndex(
-                    indexInfo.getIndexOutputWithBuffer(),
-                    indexMemoryAddress,
-                    engine,
-                    indexParameters,
-                    shouldSkipFlatStorage(indexInfo)
-                );
+                JNIService.writeIndex(indexInfo.getIndexOutputWithBuffer(), indexMemoryAddress, engine, indexParameters, false);
                 return null;
             });
 
@@ -141,21 +136,5 @@ final class MemOptimizedNativeIndexBuildStrategy implements NativeIndexBuildStra
                 exception
             );
         }
-    }
-
-    /**
-     * True for Faiss {@code half_float} fields, whose native flat storage duplicates the Lucene-side
-     * FP16 {@code .vec} that {@code NativeEngines990HalfFloatKnnVectorsFormat} always writes. Skipping it
-     * takes the field from 6 bytes/dim (fp16 .vec + fp32 native storage) down to 2.
-     *
-     * <p>Unconditional rather than gated on the memory-optimized-search setting: half_float resolves to
-     * {@code alwaysUseMemoryOptimizedSearch()} (see {@link org.opensearch.knn.index.engine.ResolvedIndexSpec}),
-     * so the reconstruction path is guaranteed to be active at read time. This mirrors how SQ 1-bit
-     * hardcodes {@code skipFlat = true} in {@code MemOptimizedScalarQuantizedIndexBuildStrategy}.
-     *
-     * <p>FLOAT fields are untouched - they keep writing full native storage, as today.
-     */
-    private static boolean shouldSkipFlatStorage(final BuildIndexParams indexInfo) {
-        return indexInfo.getKnnEngine() == KNNEngine.FAISS && indexInfo.getVectorDataType() == VectorDataType.HALF_FLOAT;
     }
 }

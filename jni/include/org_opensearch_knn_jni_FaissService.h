@@ -73,9 +73,9 @@ JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_FaissService_insertToByteInde
 /*
  * Class:     org_opensearch_knn_jni_FaissService
  * Method:    writeIndex
- * Signature: (JLorg/opensearch/knn/index/store/IndexOutputWithBuffer;Z)V
+ * Signature: (JLorg/opensearch/knn/index/store/IndexOutputWithBuffer;)V
  */
-JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_FaissService_writeIndex(JNIEnv *, jclass, jlong, jobject, jboolean);
+JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_FaissService_writeIndex(JNIEnv *, jclass, jlong, jobject);
 
 
 /*

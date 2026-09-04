@@ -12,7 +12,6 @@ import org.apache.lucene.codecs.hnsw.FlatVectorsReader;
 import org.apache.lucene.index.FieldInfo;
 import org.opensearch.knn.common.FieldInfoExtractor;
 import org.opensearch.knn.index.SpaceType;
-import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.engine.Encoder;
 import org.opensearch.knn.memoryoptsearch.faiss.binary.FaissBinaryHnswIndex;
 import org.opensearch.knn.memoryoptsearch.faiss.binary.FaissBinaryIndex;
@@ -32,16 +31,12 @@ public class FaissFlatIndexFactory {
      * indices where flat storage was skipped (IO_FLAG_SKIP_STORAGE). Returns {@code null} if the field
      * does not require externally-provided flat storage.
      *
-     * <p>Supports SQ 1-bit and flat + half_float. To add support for other flat storage types, add
-     * new conditions here.
+     * <p>Supports SQ 1-bit. To add support for other flat storage types, add new conditions here.
      */
     static FaissIndex createFlatIndex(final FieldInfo fieldInfo, final FlatVectorsReader flatVectorsReader) {
         if (FieldInfoExtractor.isSQField(fieldInfo)
             && FieldInfoExtractor.extractSQConfig(fieldInfo).getBits() == Encoder.QuantizationBits.ONE.getValue()) {
             return new FaissScalarQuantizedFlatIndex(flatVectorsReader, fieldInfo.getName());
-        }
-        if (FieldInfoExtractor.extractVectorDataType(fieldInfo) == VectorDataType.HALF_FLOAT) {
-            return new FaissHalfFloatFlatIndex(flatVectorsReader, fieldInfo.getName());
         }
         return null;
     }
@@ -121,7 +116,7 @@ public class FaissFlatIndexFactory {
             return;
         }
 
-        // Plain (non-CAGRA) HNSW path: flat + half_float skips native flat storage via
+        // Plain (non-CAGRA) HNSW path: e.g. SQ 1-bit skips native flat storage via
         // IO_FLAG_SKIP_STORAGE, so the graph's storage slot is an empty index that we wire here.
         if (nested instanceof FaissHNSWIndex hnswIndex && FaissEmptyIndex.isEmptyIndex(hnswIndex.getFlatVectors())) {
             final FaissIndex flatIndex = createFlatIndex(fieldInfo, flatVectorsReader);

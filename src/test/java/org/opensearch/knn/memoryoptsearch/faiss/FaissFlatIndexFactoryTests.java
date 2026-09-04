@@ -214,19 +214,16 @@ public class FaissFlatIndexFactoryTests extends KNNTestCase {
         }
     }
 
-    // --- Coverage: flat + half_float reconstruction ---
+    // --- Coverage: flat + half_float (x1) keeps native storage, no reconstruction needed ---
 
     @SneakyThrows
-    public void testCreate_whenHalfFloatField_thenReturnsFaissHalfFloatFlatIndex() {
+    public void testCreate_whenHalfFloatField_thenReturnsNull() {
         FieldInfo fieldInfo = KNNCodecTestUtil.FieldInfoBuilder.builder("test_field")
             .addAttribute(KNNConstants.VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
             .build();
         FlatVectorsReader mockReader = mock(FlatVectorsReader.class);
 
-        FaissIndex result = FaissFlatIndexFactory.createFlatIndex(fieldInfo, mockReader);
-
-        assertNotNull(result);
-        assertTrue(result instanceof FaissHalfFloatFlatIndex);
+        assertNull(FaissFlatIndexFactory.createFlatIndex(fieldInfo, mockReader));
     }
 
     @SneakyThrows
