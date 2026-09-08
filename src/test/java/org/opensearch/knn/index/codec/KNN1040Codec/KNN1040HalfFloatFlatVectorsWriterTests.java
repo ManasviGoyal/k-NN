@@ -136,6 +136,28 @@ public class KNN1040HalfFloatFlatVectorsWriterTests extends KNNTestCase {
     }
 
     @SneakyThrows
+    public void testFieldWriter_copyValue_roundsToFp16Precision() {
+        try (Directory dir = new ByteBuffersDirectory()) {
+            try (FlatVectorsWriter writer = newWriter(dir, "_0")) {
+                @SuppressWarnings("unchecked")
+                FlatFieldVectorsWriter<float[]> fieldWriter = (FlatFieldVectorsWriter<float[]>) writer.addField(createFieldInfo());
+                float[] original = new float[DIMENSION];
+                for (int d = 0; d < DIMENSION; d++) {
+                    original[d] = 0.1f + d; // not exactly representable in FP16, so rounding must change it
+                }
+                fieldWriter.addValue(0, original);
+
+                float[] buffered = fieldWriter.getVectors().get(0);
+                for (int d = 0; d < DIMENSION; d++) {
+                    float expectedFp16 = Float.float16ToFloat(Float.floatToFloat16(original[d]));
+                    assertEquals("dim " + d, expectedFp16, buffered[d], 0.0f);
+                    assertTrue("dim " + d + " should have been rounded away from full FP32 precision", original[d] != buffered[d]);
+                }
+            }
+        }
+    }
+
+    @SneakyThrows
     public void testFlush_writesFilesWithExpectedNamesAndHeaders() {
         try (Directory dir = new ByteBuffersDirectory()) {
             String segmentSuffix = "";

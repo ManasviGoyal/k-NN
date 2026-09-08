@@ -293,7 +293,11 @@ public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
 
         @Override
         public float[] copyValue(float[] value) {
-            return ArrayUtil.copyOfSubArray(value, 0, fieldInfo.getVectorDimension());
+            float[] copy = ArrayUtil.copyOfSubArray(value, 0, fieldInfo.getVectorDimension());
+            for (int i = 0; i < copy.length; i++) {
+                copy[i] = Float.float16ToFloat(Float.floatToFloat16(copy[i]));
+            }
+            return copy;
         }
 
         @Override
