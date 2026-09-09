@@ -224,4 +224,5 @@ public class FieldInfoExtractorTests extends KNNTestCase {
             Assert.assertTrue(FieldInfoExtractor.isMemoryOptimizedSearchField(fieldInfo, mapperService, "test_index"));
         }
     }
+
 }
