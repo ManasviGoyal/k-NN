@@ -120,7 +120,9 @@ final class MemOptimizedNativeIndexBuildStrategy implements NativeIndexBuildStra
                 transferredDocIds.clear();
             }
 
-            // Write vector
+            // Write vector. Flat storage (float or half_float) is never skipped here - only SQ 1-bit
+            // dedupes against the Lucene .vec copy, and that goes through
+            // MemOptimizedScalarQuantizedIndexBuildStrategy instead.
             AccessController.doPrivileged((PrivilegedAction<Void>) () -> {
                 JNIService.writeIndex(indexInfo.getIndexOutputWithBuffer(), indexMemoryAddress, engine, indexParameters, false);
                 return null;
