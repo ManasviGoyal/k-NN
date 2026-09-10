@@ -170,9 +170,10 @@ public class FaissMethodResolverTests extends KNNTestCase {
 
     /**
      * half_float's compression is measured against its own 16-bit storage, not FLOAT's 32-bit: x1 keeps
-     * the FP16 vectors as they are, x16 is SQ 1-bit. The levels defined against FLOAT (x2, x8, x32) have
-     * no half_float meaning and are rejected. Mirrors LuceneHNSWMethodResolver, which half_float on
-     * Faiss always maps to - FaissIVFMethod does not accept HALF_FLOAT.
+     * the FP16 vectors as they are, x4 is SQ 4-bit, x8 is SQ 2-bit and x16 is SQ 1-bit. x2 would mean
+     * 8-bit SQ, a width Faiss does not expose, and x32 would need half a bit per dimension - both are
+     * rejected. Mirrors LuceneHNSWMethodResolver, which half_float on Faiss always maps to -
+     * FaissIVFMethod does not accept HALF_FLOAT.
      */
     public void testResolveMethod_whenHalfFloatUnconfigured_thenX1WithFlatEncoder() {
         ResolvedMethodContext resolvedMethodContext = TEST_RESOLVER.resolveMethod(null, halfFloatConfig().build(), false, SpaceType.L2);
@@ -203,13 +204,56 @@ public class FaissMethodResolverTests extends KNNTestCase {
         assertEquals(1, encoderParams(resolvedMethodContext).get(SQ_BITS));
     }
 
-    public void testResolveMethod_whenHalfFloatWithFloatOnlyCompression_thenThrows() {
-        for (CompressionLevel unsupported : java.util.List.of(
-            CompressionLevel.x2,
-            CompressionLevel.x4,
-            CompressionLevel.x8,
-            CompressionLevel.x32
-        )) {
+    public void testResolveMethod_whenHalfFloatX4_thenSQFourBit() {
+        ResolvedMethodContext resolvedMethodContext = TEST_RESOLVER.resolveMethod(
+            null,
+            halfFloatConfig().compressionLevel(CompressionLevel.x4).build(),
+            false,
+            SpaceType.L2
+        );
+
+        validateResolveMethodContext(resolvedMethodContext, CompressionLevel.x4, SpaceType.L2, ENCODER_SQ, false);
+        assertEquals(4, encoderParams(resolvedMethodContext).get(SQ_BITS));
+    }
+
+    public void testResolveMethod_whenHalfFloatX8_thenSQTwoBit() {
+        ResolvedMethodContext resolvedMethodContext = TEST_RESOLVER.resolveMethod(
+            null,
+            halfFloatConfig().compressionLevel(CompressionLevel.x8).build(),
+            false,
+            SpaceType.L2
+        );
+
+        validateResolveMethodContext(resolvedMethodContext, CompressionLevel.x8, SpaceType.L2, ENCODER_SQ, false);
+        assertEquals(2, encoderParams(resolvedMethodContext).get(SQ_BITS));
+    }
+
+    public void testResolveMethod_whenHalfFloatOnDiskX4_thenSQFourBit() {
+        ResolvedMethodContext resolvedMethodContext = TEST_RESOLVER.resolveMethod(
+            null,
+            halfFloatConfig().mode(Mode.ON_DISK).compressionLevel(CompressionLevel.x4).build(),
+            false,
+            SpaceType.L2
+        );
+
+        validateResolveMethodContext(resolvedMethodContext, CompressionLevel.x4, SpaceType.L2, ENCODER_SQ, false);
+        assertEquals(4, encoderParams(resolvedMethodContext).get(SQ_BITS));
+    }
+
+    public void testResolveMethod_whenHalfFloatOnDiskX8_thenSQTwoBit() {
+        ResolvedMethodContext resolvedMethodContext = TEST_RESOLVER.resolveMethod(
+            null,
+            halfFloatConfig().mode(Mode.ON_DISK).compressionLevel(CompressionLevel.x8).build(),
+            false,
+            SpaceType.L2
+        );
+
+        validateResolveMethodContext(resolvedMethodContext, CompressionLevel.x8, SpaceType.L2, ENCODER_SQ, false);
+        assertEquals(2, encoderParams(resolvedMethodContext).get(SQ_BITS));
+    }
+
+    public void testResolveMethod_whenHalfFloatWithUnreachableCompression_thenThrows() {
+        for (CompressionLevel unsupported : java.util.List.of(CompressionLevel.x2, CompressionLevel.x32)) {
             expectThrows(
                 ValidationException.class,
                 () -> TEST_RESOLVER.resolveMethod(null, halfFloatConfig().compressionLevel(unsupported).build(), false, SpaceType.L2)
@@ -220,7 +264,7 @@ public class FaissMethodResolverTests extends KNNTestCase {
     // half_float is configured through compression_level alone, so naming an encoder is an error even
     // when it asks for the same thing 16x resolves to internally.
     public void testResolveMethod_whenHalfFloatWithExplicitEncoder_thenThrows() {
-        for (int bits : new int[] { 1, 16 }) {
+        for (int bits : new int[] { 1, 2, 4, 16 }) {
             ValidationException e = expectThrows(
                 ValidationException.class,
                 () -> TEST_RESOLVER.resolveMethod(halfFloatSQContext(bits), halfFloatConfig().build(), false, SpaceType.L2)

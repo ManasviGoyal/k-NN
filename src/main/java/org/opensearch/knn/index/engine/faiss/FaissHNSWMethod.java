@@ -99,7 +99,7 @@ public class FaissHNSWMethod extends AbstractFaissMethod {
             ValidationException validationException = new ValidationException();
             validationException.addValidationError(
                 "half_float is not supported with fp16 quantization (encoder: sq, bits: 16, or no bits specified) for Faiss HNSW. "
-                    + "Use encoder: sq, bits: 1, or the flat encoder, instead."
+                    + "Use encoder: sq, bits: 1, 2 or 4, or the flat encoder, instead."
             );
             return validationException;
         }

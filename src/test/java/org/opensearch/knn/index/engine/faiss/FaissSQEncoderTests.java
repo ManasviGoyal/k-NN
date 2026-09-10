@@ -383,6 +383,68 @@ public class FaissSQEncoderTests extends KNNTestCase {
         );
     }
 
+    public void testCalculateCompressionLevel_whenMultiBitWithHalfFloat_thenHalfOfFloatLevel() {
+        FaissSQEncoder encoder = new FaissSQEncoder();
+        assertEquals(
+            CompressionLevel.x8,
+            encoder.calculateCompressionLevel(
+                new MethodComponentContext(ENCODER_SQ, Map.of(SQ_BITS, 2)),
+                buildConfigContext(Version.CURRENT, CompressionLevel.NOT_CONFIGURED, VectorDataType.HALF_FLOAT)
+            )
+        );
+        assertEquals(
+            CompressionLevel.x4,
+            encoder.calculateCompressionLevel(
+                new MethodComponentContext(ENCODER_SQ, Map.of(SQ_BITS, 4)),
+                buildConfigContext(Version.CURRENT, CompressionLevel.NOT_CONFIGURED, VectorDataType.HALF_FLOAT)
+            )
+        );
+        assertEquals(
+            CompressionLevel.x16,
+            encoder.calculateCompressionLevel(
+                new MethodComponentContext(ENCODER_SQ, Map.of(SQ_BITS, 2)),
+                buildConfigContext(Version.CURRENT, CompressionLevel.NOT_CONFIGURED, VectorDataType.FLOAT)
+            )
+        );
+        assertEquals(
+            CompressionLevel.x8,
+            encoder.calculateCompressionLevel(
+                new MethodComponentContext(ENCODER_SQ, Map.of(SQ_BITS, 4)),
+                buildConfigContext(Version.CURRENT, CompressionLevel.NOT_CONFIGURED, VectorDataType.FLOAT)
+            )
+        );
+    }
+
+    public void testValidateDirectly_whenMultiBitWithHalfFloatAndMatchingLevel_thenNoException() {
+        FaissSQEncoder encoder = new FaissSQEncoder();
+        encoder.validate(
+            buildMethodContext(Map.of(SQ_BITS, 2)),
+            buildConfigContext(Version.CURRENT, CompressionLevel.x8, VectorDataType.HALF_FLOAT)
+        );
+        encoder.validate(
+            buildMethodContext(Map.of(SQ_BITS, 4)),
+            buildConfigContext(Version.CURRENT, CompressionLevel.x4, VectorDataType.HALF_FLOAT)
+        );
+    }
+
+    public void testValidateDirectly_whenMultiBitWithHalfFloatAndFloatLevel_thenThrows() {
+        FaissSQEncoder encoder = new FaissSQEncoder();
+        expectThrows(
+            ValidationException.class,
+            () -> encoder.validate(
+                buildMethodContext(Map.of(SQ_BITS, 2)),
+                buildConfigContext(Version.CURRENT, CompressionLevel.x16, VectorDataType.HALF_FLOAT)
+            )
+        );
+        expectThrows(
+            ValidationException.class,
+            () -> encoder.validate(
+                buildMethodContext(Map.of(SQ_BITS, 4)),
+                buildConfigContext(Version.CURRENT, CompressionLevel.x8, VectorDataType.HALF_FLOAT)
+            )
+        );
+    }
+
     public void testValidateDirectly_whenBits16WithHalfFloat_thenThrows() {
         FaissSQEncoder encoder = new FaissSQEncoder();
         ValidationException e = expectThrows(

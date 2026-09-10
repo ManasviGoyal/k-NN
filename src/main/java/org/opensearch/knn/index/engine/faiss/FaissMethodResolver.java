@@ -24,6 +24,8 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.opensearch.knn.common.KNNConstants.ENCODER_FLAT;
 import static org.opensearch.knn.common.KNNConstants.ENCODER_SQ;
@@ -48,7 +50,14 @@ public class FaissMethodResolver extends AbstractMethodResolver {
         CompressionLevel.x32
     );
 
-    private static final Set<CompressionLevel> SUPPORTED_COMPRESSION_LEVELS_HALF_FLOAT = Set.of(CompressionLevel.x1, CompressionLevel.x16);
+    // x1 stores raw fp16 with no encoder; everything above it is whatever FaissSQEncoder can quantize
+    // half_float to. Derived from that one table rather than listed again here, so a width added or
+    // removed there cannot leave this set behind. x2 and x32 stay unreachable - 8-bit SQ is not a width
+    // Faiss exposes, and x32 would need half a bit per dimension.
+    private static final Set<CompressionLevel> SUPPORTED_COMPRESSION_LEVELS_HALF_FLOAT = Stream.concat(
+        Stream.of(CompressionLevel.x1),
+        FaissSQEncoder.halfFloatSQCompressionLevels().stream()
+    ).collect(Collectors.toUnmodifiableSet());
 
     @Override
     public ResolvedMethodContext resolveMethod(
@@ -98,10 +107,9 @@ public class FaissMethodResolver extends AbstractMethodResolver {
 
     // AbstractMethodResolver.shouldEncoderBeResolved() only auto-resolves an encoder for FLOAT, so
     // half_float would fall through to the flat encoder and resolve to x1 - conflicting with a
-    // configured x16. Widen just that data-type check here, the same way LuceneHNSWMethodResolver does.
-    // x16 is half_float's only SQ-triggering level, unlike FLOAT where any configured level besides x1
-    // resolves an encoder. ON_DISK with nothing configured also resolves one: it means "quantize as far
-    // as this data type goes", which is x16 for half_float, the counterpart of FLOAT's ON_DISK -> x32.
+    // configured quantized level. Widen just that data-type check here, the same way
+    // LuceneHNSWMethodResolver does. Unlike FLOAT, where any configured level besides x1 resolves an
+    // encoder, half_float resolves one exactly for the levels HALF_FLOAT_SQ_BITS covers.
     @Override
     protected boolean shouldEncoderBeResolved(KNNMethodContext knnMethodContext, KNNMethodConfigContext knnMethodConfigContext) {
         if (isEncoderSpecified(knnMethodContext)) {
@@ -109,14 +117,17 @@ public class FaissMethodResolver extends AbstractMethodResolver {
         }
 
         if (knnMethodConfigContext.getVectorDataType() == VectorDataType.HALF_FLOAT) {
-            if (knnMethodConfigContext.getCompressionLevel() == CompressionLevel.x16) {
-                return true;
-            }
-            return Mode.ON_DISK == knnMethodConfigContext.getMode()
-                && CompressionLevel.isConfigured(knnMethodConfigContext.getCompressionLevel()) == false;
+            return FaissSQEncoder.halfFloatBitsFor(halfFloatCompressionLevel(knnMethodConfigContext)) != null;
         }
 
         return super.shouldEncoderBeResolved(knnMethodContext, knnMethodConfigContext);
+    }
+
+    private static CompressionLevel halfFloatCompressionLevel(KNNMethodConfigContext knnMethodConfigContext) {
+        if (CompressionLevel.isConfigured(knnMethodConfigContext.getCompressionLevel())) {
+            return knnMethodConfigContext.getCompressionLevel();
+        }
+        return Mode.ON_DISK == knnMethodConfigContext.getMode() ? CompressionLevel.x16 : CompressionLevel.x1;
     }
 
     private void resolveEncoder(
@@ -125,6 +136,22 @@ public class FaissMethodResolver extends AbstractMethodResolver {
         Map<String, Encoder> encoderMap
     ) {
         if (shouldEncoderBeResolved(resolvedKNNMethodContext, knnMethodConfigContext) == false) {
+            return;
+        }
+
+        // Same shape as the FLOAT blocks below - build the encoder context, put the parameters, hand it to
+        // applyEncoder - but taken before them. Those are written against FLOAT's 32 bits, where each level
+        // picks a different encoder; half_float's levels are against its own 16 and always land on sq,
+        // differing only in bit width, so the level-to-encoder decision collapses to a single lookup.
+        if (VectorDataType.HALF_FLOAT == knnMethodConfigContext.getVectorDataType()) {
+            Encoder.QuantizationBits halfFloatBits = FaissSQEncoder.halfFloatBitsFor(halfFloatCompressionLevel(knnMethodConfigContext));
+            if (halfFloatBits == null) {
+                return;
+            }
+            MethodComponentContext encoderComponentContext = new MethodComponentContext(ENCODER_SQ, new HashMap<>());
+            Encoder encoder = encoderMap.get(ENCODER_SQ);
+            encoderComponentContext.getParameters().put(SQ_BITS, halfFloatBits.getValue());
+            applyEncoder(resolvedKNNMethodContext, knnMethodConfigContext, encoderComponentContext, encoder);
             return;
         }
 
@@ -139,16 +166,6 @@ public class FaissMethodResolver extends AbstractMethodResolver {
         // would make it easier to add new compression level resolutions.
         MethodComponentContext encoderComponentContext = new MethodComponentContext(ENCODER_FLAT, new HashMap<>());
         Encoder encoder = encoderMap.get(ENCODER_FLAT);
-        // Compression levels below are defined against FLOAT's 32 bits. For half_float the only
-        // configurable level is x16, and it means SQ 1-bit (16 bits down to 1) - not the 2-bit
-        // QFrameBit encoder that x16 means for FLOAT. Handle it here and skip the FLOAT chain.
-        if (knnMethodConfigContext.getVectorDataType() == VectorDataType.HALF_FLOAT) {
-            encoderComponentContext = new MethodComponentContext(ENCODER_SQ, new HashMap<>());
-            encoder = encoderMap.get(ENCODER_SQ);
-            encoderComponentContext.getParameters().put(SQ_BITS, Encoder.QuantizationBits.ONE.getValue());
-            applyEncoder(resolvedKNNMethodContext, knnMethodConfigContext, encoderComponentContext, encoder);
-            return;
-        }
         if (CompressionLevel.x2 == resolvedCompressionLevel) {
             encoderComponentContext = new MethodComponentContext(ENCODER_SQ, new HashMap<>());
             encoder = encoderMap.get(ENCODER_SQ);
@@ -200,10 +217,11 @@ public class FaissMethodResolver extends AbstractMethodResolver {
         );
         encoderComponentContext.getParameters().putAll(resolvedParams);
 
-        // When auto-resolved to bits=1, remove the type and clip defaults that were injected —
-        // the 1-bit quantization path doesn't use them, and validateEncoderConfig would reject them.
-        if (encoderComponentContext.getParameters().get(SQ_BITS) instanceof Integer bitsVal
-            && bitsVal == Encoder.QuantizationBits.ONE.getValue()) {
+        // When auto-resolved to a coded bit width (1, 2 or 4), remove the type and clip defaults that
+        // were injected — those paths don't use them, and validateEncoderConfig rejects them for any
+        // width other than 16. Keyed off isSQCodedBits rather than a single width so the two stay in
+        // step: every width that path accepts is a width validate refuses type and clip for.
+        if (encoderComponentContext.getParameters().get(SQ_BITS) instanceof Integer bitsVal && FaissSQEncoder.isSQCodedBits(bitsVal)) {
             encoderComponentContext.getParameters().remove(FAISS_SQ_TYPE);
             encoderComponentContext.getParameters().remove(FAISS_SQ_CLIP);
         }
@@ -212,10 +230,10 @@ public class FaissMethodResolver extends AbstractMethodResolver {
     }
 
     /**
-     * half_float exposes exactly one knob - {@code compression_level}, x1 or x16 - so naming an encoder
-     * is rejected rather than silently accepted. Checked against the user's own method context, before
-     * resolution injects {@code sq bits=1} for x16: that injected encoder is internal and must still
-     * work.
+     * half_float exposes exactly one knob - {@code compression_level}, x1 / x4 / x8 / x16 - so naming an
+     * encoder is rejected rather than silently accepted. Checked against the user's own method context,
+     * before resolution injects the matching {@code sq bits=N}: that injected encoder is internal and
+     * must still work.
      */
     private void validateEncoderNotSpecifiedForHalfFloat(KNNMethodContext knnMethodContext, KNNMethodConfigContext knnMethodConfigContext) {
         if (knnMethodConfigContext.getVectorDataType() != VectorDataType.HALF_FLOAT || isEncoderSpecified(knnMethodContext) == false) {

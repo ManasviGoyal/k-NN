@@ -26,6 +26,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.opensearch.knn.common.KNNConstants.ENCODER_SQ;
 import static org.opensearch.knn.common.KNNConstants.FAISS_FLAT_DESCRIPTION;
@@ -116,15 +117,54 @@ public class FaissSQEncoder implements Encoder {
     }
 
     /**
-     * Compression {@code bits} achieves for {@code vectorDataType}. {@link QuantizationBits} maps a bit
-     * width to one compression level measured against FLOAT's 32 bits, so bits=1 is x32 there. Taking
-     * HALF_FLOAT's 16 bits down to 1 saves 16x, not 32x. Mirrors {@code LuceneSQEncoder.Bits}, which
-     * takes the data type for the same reason. Shared by the two callers that need it so they cannot
-     * disagree - calculateCompressionLevel reports it, validate checks against it.
+     * half_float compression level to the SQ document bit width that achieves it. {@link QuantizationBits}
+     * already carries this relation for FLOAT, measured against its 32 bits - bits=1 is x32 there. HALF_FLOAT
+     * starts from 16, so every width saves exactly half as much and needs its own table. Mirrors
+     * {@code LuceneSQEncoder.Bits}, which takes the data type for the same reason.
+     *
+     * Both directions live here, and the reverse is derived from this map rather than written out again, so
+     * resolution (level to bits) and reporting (bits to level) cannot drift into disagreeing - a drift that
+     * would surface as validateCompressionConflicts rejecting a config the resolver had just produced.
+     *
+     * x1 is absent: it means raw fp16 with no encoder. bits=16 is absent because quantizing fp16 to 16 bits
+     * is a no-op that {@link #validate} rejects outright.
+     */
+    private static final Map<CompressionLevel, QuantizationBits> HALF_FLOAT_BITS_BY_COMPRESSION = Map.of(
+        CompressionLevel.x4,
+        QuantizationBits.FOUR,
+        CompressionLevel.x8,
+        QuantizationBits.TWO,
+        CompressionLevel.x16,
+        QuantizationBits.ONE
+    );
+
+    private static final Map<QuantizationBits, CompressionLevel> HALF_FLOAT_COMPRESSION_BY_BITS = HALF_FLOAT_BITS_BY_COMPRESSION.entrySet()
+        .stream()
+        .collect(Collectors.toUnmodifiableMap(Map.Entry::getValue, Map.Entry::getKey));
+
+    /**
+     * SQ bit width that achieves {@code compressionLevel} on half_float, or null when the level resolves no
+     * SQ encoder (x1) or is not supported for this data type.
+     */
+    public static QuantizationBits halfFloatBitsFor(final CompressionLevel compressionLevel) {
+        return HALF_FLOAT_BITS_BY_COMPRESSION.get(compressionLevel);
+    }
+
+    /** Compression levels half_float can reach through SQ. Excludes x1, which resolves no encoder. */
+    public static Set<CompressionLevel> halfFloatSQCompressionLevels() {
+        return HALF_FLOAT_BITS_BY_COMPRESSION.keySet();
+    }
+
+    /**
+     * Compression {@code bits} achieves for {@code vectorDataType}. Shared by the two callers that need it
+     * so they cannot disagree - calculateCompressionLevel reports it, validate checks against it.
      */
     private static CompressionLevel compressionLevelFor(QuantizationBits bits, VectorDataType vectorDataType) {
-        if (bits == QuantizationBits.ONE && vectorDataType == VectorDataType.HALF_FLOAT) {
-            return CompressionLevel.x16;
+        if (vectorDataType == VectorDataType.HALF_FLOAT) {
+            final CompressionLevel halfFloatLevel = HALF_FLOAT_COMPRESSION_BY_BITS.get(bits);
+            if (halfFloatLevel != null) {
+                return halfFloatLevel;
+            }
         }
         return bits.getCompressionLevel();
     }
@@ -176,7 +216,7 @@ public class FaissSQEncoder implements Encoder {
                 String.format(
                     Locale.ROOT,
                     "half_float is not supported with fp16 quantization (%s=16, or no %s specified) for encoder [%s]. "
-                        + "Use %s=1, or the flat encoder, instead.",
+                        + "Use %s=1, 2 or 4, or the flat encoder, instead.",
                     SQ_BITS,
                     SQ_BITS,
                     ENCODER_SQ,
