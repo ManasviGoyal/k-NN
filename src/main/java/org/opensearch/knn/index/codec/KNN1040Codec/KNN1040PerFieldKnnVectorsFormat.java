@@ -7,6 +7,7 @@ package org.opensearch.knn.index.codec.KNN1040Codec;
 
 import org.apache.lucene.backward_codecs.lucene99.Lucene99RWHnswScalarQuantizedVectorsFormat;
 import org.apache.lucene.codecs.lucene104.Lucene104ScalarQuantizedVectorsFormat;
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.lucene.util.quantization.QuantizedByteVectorValues.ScalarEncoding;
 import org.apache.lucene.codecs.KnnVectorsFormat;
 import org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsFormat;
@@ -26,6 +27,7 @@ import org.opensearch.knn.index.codec.params.KNNVectorsFormatParams;
 import org.opensearch.knn.index.engine.KNNEngine;
 import org.opensearch.knn.index.engine.faiss.FaissCodecFormatResolver;
 import org.opensearch.knn.index.engine.lucene.LuceneCodecFormatResolver;
+import org.opensearch.knn.index.engine.lucene.LuceneFlatMethodResolver;
 import org.opensearch.knn.index.engine.lucene.LuceneSQEncoder;
 import org.opensearch.knn.index.mapper.CompressionLevel;
 
@@ -107,10 +109,11 @@ public class KNN1040PerFieldKnnVectorsFormat extends KNN1040BasePerFieldKnnVecto
             );
             final Tuple<Integer, ExecutorService> merge = getMergeThreadCountAndExecutorService();
             final int threshold = toTinySegmentsThreshold(ctx.getApproximateThreshold());
-            if (p.getBits() == LuceneSQEncoder.Bits.ONE.getValue()) {
+            if (LuceneSQEncoder.isCodedBits(p.getBits())) {
+                final ScalarEncoding encoding = ScalarEncodingResolver.forDocBits(p.getBits());
                 if (ctx.getVectorDataType() == VectorDataType.HALF_FLOAT) {
                     return new KNN1040HnswHalfFloatScalarQuantizedVectorsFormat(
-                        p.getBitEncoding(),
+                        encoding,
                         p.getMaxConnections(),
                         p.getBeamWidth(),
                         merge.v1(),
@@ -119,7 +122,7 @@ public class KNN1040PerFieldKnnVectorsFormat extends KNN1040BasePerFieldKnnVecto
                     );
                 }
                 return new KNN1040HnswScalarQuantizedVectorsFormat(
-                    p.getBitEncoding(),
+                    encoding,
                     p.getMaxConnections(),
                     p.getBeamWidth(),
                     merge.v1(),
@@ -139,12 +142,15 @@ public class KNN1040PerFieldKnnVectorsFormat extends KNN1040BasePerFieldKnnVecto
             );
         }, LuceneVectorsFormatType.FLAT, ctx -> {
             if (ctx.getVectorDataType() == VectorDataType.HALF_FLOAT) {
-                if (ctx.getCompressionLevel() == CompressionLevel.x16) {
-                    return new KNN1040HalfFloatScalarQuantizedVectorsFormat(ScalarEncoding.SINGLE_BIT_QUERY_NIBBLE);
+                // x1 is the only half_float level that stores raw fp16, with no encoder at all.
+                if (LuceneSQEncoder.halfFloatBitsFor(ctx.getCompressionLevel()) == null) {
+                    return new KNN1040HalfFloatFlatVectorsFormat();
                 }
-                return new KNN1040HalfFloatFlatVectorsFormat();
+                return new KNN1040HalfFloatScalarQuantizedVectorsFormat(
+                    resolveFlatScalarEncoding(ctx.getCompressionLevel(), ctx.getVectorDataType())
+                );
             }
-            return new KNN1040ScalarQuantizedVectorsFormat(ScalarEncoding.SINGLE_BIT_QUERY_NIBBLE);
+            return new KNN1040ScalarQuantizedVectorsFormat(resolveFlatScalarEncoding(ctx.getCompressionLevel(), ctx.getVectorDataType()));
         });
     }
 
@@ -162,14 +168,26 @@ public class KNN1040PerFieldKnnVectorsFormat extends KNN1040BasePerFieldKnnVecto
     }
 
     /**
-     * Picks the {@link ScalarEncoding} for the FLAT format from the field's compression level.
-     * x32 → 1-bit ({@code SINGLE_BIT_QUERY_NIBBLE}), x16 → 2-bit ({@code DIBIT_QUERY_NIBBLE}),
-     * x8 → 4-bit ({@code PACKED_NIBBLE}). Any other value (including {@code NOT_CONFIGURED},
-     * which the resolver maps to x32) falls back to 1-bit. {@link LuceneFlatMethodResolver}
-     * rejects unsupported compression levels at mapping time so an unexpected value here would
-     * indicate an upstream invariant violation.
+     * Picks the {@link ScalarEncoding} for the FLAT format from a field's compression level.
+     *
+     * <p>Data-type aware, because a compression level names a different width for each data type: levels
+     * are measured against the pre-quantization width, so FLOAT's 32 bits give x8 -> 4-bit, x16 -> 2-bit,
+     * x32 -> 1-bit, while HALF_FLOAT's 16 bits give x4 -> 4-bit, x8 -> 2-bit, x16 -> 1-bit. Using the FLOAT
+     * table for half_float silently scrambles the widths, so the half_float mapping is taken from
+     * {@link LuceneSQEncoder}, which owns it for both engines.</p>
+     *
+     * <p>A level with no mapping falls back to 1-bit. For half_float that is x1, which callers resolve to
+     * the raw FP16 format before reaching here; {@link LuceneFlatMethodResolver} rejects unsupported levels
+     * at mapping time, so an unexpected value would indicate an upstream invariant violation.</p>
      */
-    private static ScalarEncoding resolveFlatScalarEncoding(final CompressionLevel compressionLevel) {
+    @VisibleForTesting
+    static ScalarEncoding resolveFlatScalarEncoding(final CompressionLevel compressionLevel, final VectorDataType vectorDataType) {
+        if (vectorDataType == VectorDataType.HALF_FLOAT) {
+            final LuceneSQEncoder.Bits halfFloatBits = LuceneSQEncoder.halfFloatBitsFor(compressionLevel);
+            return ScalarEncodingResolver.forDocBits(
+                halfFloatBits == null ? LuceneSQEncoder.Bits.ONE.getValue() : halfFloatBits.getValue()
+            );
+        }
         if (compressionLevel == CompressionLevel.x8) {
             return ScalarEncodingResolver.forDocBits(4);
         }

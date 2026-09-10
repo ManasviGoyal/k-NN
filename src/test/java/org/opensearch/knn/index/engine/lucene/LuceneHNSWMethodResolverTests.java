@@ -543,21 +543,34 @@ public class LuceneHNSWMethodResolverTests extends KNNTestCase {
         );
     }
 
-    // half_float only supports the SQ 1-bit path; x4 (bits=7) has no valid encoder to auto-resolve to.
-    public void testResolveMethod_whenHalfFloatExplicitCompression4x_thenThrows() {
-        expectThrows(
-            ValidationException.class,
-            () -> TEST_RESOLVER.resolveMethod(
-                null,
-                KNNMethodConfigContext.builder()
-                    .vectorDataType(VectorDataType.HALF_FLOAT)
-                    .compressionLevel(CompressionLevel.x4)
-                    .versionCreated(Version.CURRENT)
-                    .build(),
-                false,
-                SpaceType.L2
-            )
+    private ResolvedMethodContext resolveHalfFloat(CompressionLevel compressionLevel) {
+        return TEST_RESOLVER.resolveMethod(
+            null,
+            KNNMethodConfigContext.builder()
+                .vectorDataType(VectorDataType.HALF_FLOAT)
+                .compressionLevel(compressionLevel)
+                .versionCreated(Version.CURRENT)
+                .build(),
+            false,
+            SpaceType.L2
         );
+    }
+
+    private int resolvedSqBits(ResolvedMethodContext resolvedMethodContext) {
+        MethodComponentContext encoder = (MethodComponentContext) resolvedMethodContext.getKnnMethodContext()
+            .getMethodComponentContext()
+            .getParameters()
+            .get(METHOD_ENCODER_PARAMETER);
+        assertNotNull("no encoder was resolved", encoder);
+        assertEquals(ENCODER_SQ, encoder.getName());
+        return (Integer) encoder.getParameters().get(LUCENE_SQ_BITS);
+    }
+
+    // Measured against half_float's own 16 bits: 4 bits is a 4x saving here where it is 8x for FLOAT.
+    public void testResolveMethod_whenHalfFloatExplicitCompression4x_thenResolvesToSQFourBit() {
+        ResolvedMethodContext resolved = resolveHalfFloat(CompressionLevel.x4);
+        assertEquals(CompressionLevel.x4, resolved.getCompressionLevel());
+        assertEquals(4, resolvedSqBits(resolved));
     }
 
     public void testResolveMethod_whenExplicitCompression4x_thenResolvesToSQSevenBit() {
@@ -806,7 +819,7 @@ public class LuceneHNSWMethodResolverTests extends KNNTestCase {
     }
 
     public void testResolveMethod_whenHalfFloatOnDiskWithFloatOnlyCompression_thenThrows() {
-        for (CompressionLevel unsupported : java.util.List.of(CompressionLevel.x2, CompressionLevel.x4, CompressionLevel.x32)) {
+        for (CompressionLevel unsupported : java.util.List.of(CompressionLevel.x2, CompressionLevel.x32)) {
             expectThrows(
                 ValidationException.class,
                 () -> TEST_RESOLVER.resolveMethod(
@@ -859,23 +872,19 @@ public class LuceneHNSWMethodResolverTests extends KNNTestCase {
         );
     }
 
-    /** x16 now resolves to SQ 1-bit for half_float too - see testResolveMethod_whenHalfFloatExplicitCompression16x_thenResolvesToSQOneBit.
-     *  Any level other than x1/x16 must still be rejected, not silently ignored - see
-     *  testResolveMethod_whenHalfFloatExplicitCompression4x_thenThrows. */
-    public void testResolveMethod_whenHalfFloatWithExplicitX8_thenThrow() {
-        expectThrows(
-            ValidationException.class,
-            () -> TEST_RESOLVER.resolveMethod(
-                null,
-                KNNMethodConfigContext.builder()
-                    .vectorDataType(VectorDataType.HALF_FLOAT)
-                    .compressionLevel(CompressionLevel.x8)
-                    .versionCreated(Version.CURRENT)
-                    .build(),
-                false,
-                SpaceType.L2
-            )
-        );
+    /** half_float's ladder is x1 / x4 / x8 / x16, each mapping to an SQ width against its own 16 bits.
+     *  x2 and x32 stay rejected - see testResolveMethod_whenHalfFloatWithUnreachableCompression_thenThrows. */
+    public void testResolveMethod_whenHalfFloatWithExplicitX8_thenResolvesToSQTwoBit() {
+        ResolvedMethodContext resolved = resolveHalfFloat(CompressionLevel.x8);
+        assertEquals(CompressionLevel.x8, resolved.getCompressionLevel());
+        assertEquals(2, resolvedSqBits(resolved));
+    }
+
+    // x2 would be 8-bit SQ and x32 would need half a bit per dimension; neither is reachable for half_float.
+    public void testResolveMethod_whenHalfFloatWithUnreachableCompression_thenThrows() {
+        for (CompressionLevel unreachable : java.util.List.of(CompressionLevel.x2, CompressionLevel.x32)) {
+            expectThrows(ValidationException.class, () -> resolveHalfFloat(unreachable));
+        }
     }
 
     public void testResolveMethod_whenHalfFloatWithTraining_thenThrow() {

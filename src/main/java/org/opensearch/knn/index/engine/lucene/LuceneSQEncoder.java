@@ -46,14 +46,21 @@ public class LuceneSQEncoder implements Encoder {
     static final Bits LUCENE_PRE_360_SUPPORTED_SQ_BITS = Bits.SEVEN;
 
     /**
-     * Supported bit widths for SQ quantization. Each maps to a specific quantization strategy.
-     * {@code bits=1}'s compression level depends on the vector data type: FLOAT is 32-bit, so 1-bit
-     * quantization is 32x; HALF_FLOAT is 16-bit, so the same 1-bit quantization is only 16x.
-     * {@code bits=7} is FLOAT-only, so its compression level (x4) doesn't vary by data type.
+     * Supported bit widths for SQ quantization. Each maps to a specific quantization strategy, and the
+     * compression a width achieves depends on the pre-quantization width of the data type: FLOAT starts
+     * from 32 bits, HALF_FLOAT from 16, so every coded width saves exactly half as much on HALF_FLOAT.
+     * 1-bit is x32 on FLOAT but x16 on HALF_FLOAT, 2-bit is x16 / x8, 4-bit is x8 / x4.
+     *
+     * <p>Not every width is valid for every data type - see {@link #FLOAT_BITS} and
+     * {@link #HALF_FLOAT_BITS_BY_COMPRESSION}. {@code bits=7} is FLOAT-only (16/7 is not a power of two,
+     * so it has no {@code Nx} name for HALF_FLOAT), and {@code bits=2}/{@code bits=4} are HALF_FLOAT-only
+     * because FLOAT at those widths is served by Faiss, not by this encoder.</p>
      */
     @Getter
     public enum Bits {
         ONE(1),
+        TWO(2),
+        FOUR(4),
         SEVEN(7);
 
         private final int value;
@@ -63,13 +70,16 @@ public class LuceneSQEncoder implements Encoder {
         }
 
         /**
-         * @param vectorDataType the vector data type being quantized, needed since {@code bits=1}'s
-         *                       compression level depends on the original (pre-quantization) bit width
+         * @param vectorDataType the vector data type being quantized, needed because the compression a
+         *                       width achieves depends on the original (pre-quantization) bit width
          * @return the compression level {@code bits} quantization achieves for that data type
          */
         public CompressionLevel getCompressionLevel(VectorDataType vectorDataType) {
+            final boolean isHalfFloat = vectorDataType == VectorDataType.HALF_FLOAT;
             return switch (this) {
-                case ONE -> vectorDataType == VectorDataType.HALF_FLOAT ? CompressionLevel.x16 : CompressionLevel.x32;
+                case ONE -> isHalfFloat ? CompressionLevel.x16 : CompressionLevel.x32;
+                case TWO -> isHalfFloat ? CompressionLevel.x8 : CompressionLevel.x16;
+                case FOUR -> isHalfFloat ? CompressionLevel.x4 : CompressionLevel.x8;
                 case SEVEN -> CompressionLevel.x4;
             };
         }
@@ -80,6 +90,51 @@ public class LuceneSQEncoder implements Encoder {
             }
             throw new IllegalArgumentException(String.format(Locale.ROOT, "Unsupported bits value: %d", value));
         }
+    }
+
+    private static final Set<Bits> FLOAT_BITS = Set.of(Bits.ONE, Bits.SEVEN);
+
+    private static final Map<CompressionLevel, Bits> HALF_FLOAT_BITS_BY_COMPRESSION = Map.of(
+        CompressionLevel.x4,
+        Bits.FOUR,
+        CompressionLevel.x8,
+        Bits.TWO,
+        CompressionLevel.x16,
+        Bits.ONE
+    );
+
+    /** SQ width achieving {@code compressionLevel} on half_float, or null when the level resolves no encoder. */
+    public static Bits halfFloatBitsFor(final CompressionLevel compressionLevel) {
+        return HALF_FLOAT_BITS_BY_COMPRESSION.get(compressionLevel);
+    }
+
+    /** Compression levels half_float can reach through Lucene SQ. Excludes x1, which resolves no encoder. */
+    public static Set<CompressionLevel> halfFloatSQCompressionLevels() {
+        return HALF_FLOAT_BITS_BY_COMPRESSION.keySet();
+    }
+
+    /** Whether {@code bits} is a coded width that stores integer SQ codes rather than Lucene's stock byte SQ. */
+    public static boolean isCodedBits(final int bits) {
+        return bits == Bits.ONE.getValue() || bits == Bits.TWO.getValue() || bits == Bits.FOUR.getValue();
+    }
+
+    /**
+     * Whether {@code bits} is accepted for the data type in {@code context}. Data-type aware on purpose:
+     * {@link #LUCENE_SQ_BITS_SUPPORTED} is the union across data types, so checking membership in it alone
+     * would let FLOAT through at 2 and 4 - widths this engine cannot write for FLOAT, since the codec sends
+     * anything but a coded width to Lucene's stock byte-SQ format, which has no 2-bit variant.
+     *
+     * <p>A null context (or null data type) is treated as FLOAT, matching the field's default.</p>
+     */
+    private static Boolean isSupportedBitsForDataType(final Integer bits, final KNNMethodConfigContext context) {
+        if (bits == null) {
+            return false;
+        }
+        final VectorDataType vectorDataType = context == null ? null : context.getVectorDataType();
+        if (vectorDataType == VectorDataType.HALF_FLOAT) {
+            return isCodedBits(bits);
+        }
+        return FLOAT_BITS.stream().anyMatch(b -> b.getValue() == bits);
     }
 
     // Lucene SQ supports compression to 1 bit only in indices with version >= 3.6.0
@@ -96,7 +151,7 @@ public class LuceneSQEncoder implements Encoder {
         .addParameter(
             LUCENE_SQ_BITS,
             // Making default value null - it should be passed in from LuceneHNSWMethodResolver
-            new Parameter.IntegerParameter(LUCENE_SQ_BITS, null, (v, context) -> LUCENE_SQ_BITS_SUPPORTED.contains(v))
+            new Parameter.IntegerParameter(LUCENE_SQ_BITS, null, LuceneSQEncoder::isSupportedBitsForDataType)
         )
         .build();
 
@@ -150,22 +205,39 @@ public class LuceneSQEncoder implements Encoder {
         }
 
         if (bitsObj instanceof Integer bits) {
-            // half_float only supports the 1-bit path; bits=7 stays float-only.
-            if (configContext.getVectorDataType() == VectorDataType.HALF_FLOAT && bits != Bits.ONE.getValue()) {
+            // Widths are per data type: half_float takes the coded widths (1, 2, 4) against its 16 bits,
+            // FLOAT takes 1 and 7.
+            if (configContext.getVectorDataType() == VectorDataType.HALF_FLOAT) {
+                if (isCodedBits(bits) == false) {
+                    validationException.addValidationError(
+                        String.format(
+                            Locale.ROOT,
+                            "[%s] data type supports [%s] values %s for encoder [%s].",
+                            VectorDataType.HALF_FLOAT.getValue(),
+                            LUCENE_SQ_BITS,
+                            HALF_FLOAT_BITS_BY_COMPRESSION.values().stream().map(Bits::getValue).sorted().toList(),
+                            ENCODER_SQ
+                        )
+                    );
+                    throw validationException;
+                }
+            } else if (FLOAT_BITS.contains(Bits.fromValue(bits)) == false) {
                 validationException.addValidationError(
                     String.format(
                         Locale.ROOT,
-                        "[%s] data type only supports [%s=%d] for encoder [%s].",
-                        VectorDataType.HALF_FLOAT.getValue(),
+                        "[%s] data type supports [%s] values %s for encoder [%s].",
+                        configContext.getVectorDataType() == null
+                            ? VectorDataType.FLOAT.getValue()
+                            : configContext.getVectorDataType().getValue(),
                         LUCENE_SQ_BITS,
-                        Bits.ONE.getValue(),
+                        FLOAT_BITS.stream().map(Bits::getValue).sorted().toList(),
                         ENCODER_SQ
                     )
                 );
                 throw validationException;
             }
 
-            if (bits == Bits.ONE.getValue()) {
+            if (isCodedBits(bits)) {
                 Set<String> nonBitParameters = encoderParams.keySet()
                     .stream()
                     .filter(k -> !k.equals(LUCENE_SQ_BITS))
@@ -175,7 +247,7 @@ public class LuceneSQEncoder implements Encoder {
                         String.format(
                             Locale.ROOT,
                             "Parameters [%s] are not supported when [%s=%d] for encoder [%s]. "
-                                + "The 1-bit scalar quantization path does not use additional parameters.",
+                                + "The coded scalar quantization path does not use additional parameters.",
                             nonBitParameters,
                             LUCENE_SQ_BITS,
                             bits,

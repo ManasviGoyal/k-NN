@@ -2805,24 +2805,49 @@ public class KNNVectorFieldMapperTests extends KNNTestCase {
         ModelDao modelDao = mock(ModelDao.class);
         KNNVectorFieldMapper.TypeParser typeParser = new KNNVectorFieldMapper.TypeParser(() -> modelDao);
 
-        // half_float only supports x1 or x16 (opt-in SQ 1-bit, also the default); anything else must
-        // still be rejected, by LuceneFlatMethodResolver's per-data-type validation.
-        XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()
-            .startObject()
-            .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
-            .field(DIMENSION_FIELD_NAME, TEST_DIMENSION)
-            .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
-            .field(COMPRESSION_LEVEL_PARAMETER, CompressionLevel.x4.getName())
-            .startObject(KNN_METHOD)
-            .field(NAME, METHOD_FLAT)
-            .endObject()
-            .endObject();
+        for (CompressionLevel unreachable : java.util.List.of(CompressionLevel.x2, CompressionLevel.x32)) {
+            XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()
+                .startObject()
+                .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+                .field(DIMENSION_FIELD_NAME, TEST_DIMENSION)
+                .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+                .field(COMPRESSION_LEVEL_PARAMETER, unreachable.getName())
+                .startObject(KNN_METHOD)
+                .field(NAME, METHOD_FLAT)
+                .endObject()
+                .endObject();
 
-        ValidationException exception = expectThrows(
-            ValidationException.class,
-            () -> typeParser.parse(fieldName, xContentBuilderToMap(xContentBuilder), buildParserContext(indexName, settings))
-        );
-        assertTrue(exception.getMessage().contains("compression"));
+            ValidationException exception = expectThrows(
+                ValidationException.class,
+                () -> typeParser.parse(fieldName, xContentBuilderToMap(xContentBuilder), buildParserContext(indexName, settings))
+            );
+            assertTrue(unreachable.getName() + " -> " + exception.getMessage(), exception.getMessage().contains("compression"));
+        }
+    }
+
+    @SneakyThrows
+    public void testTypeParser_whenHalfFloatFlatWithQuantizedCompression_thenAccepted() {
+        String fieldName = "test-field-name";
+        String indexName = "test-index-name";
+
+        Settings settings = Settings.builder().put(settings(CURRENT).build()).put(KNN_INDEX, true).build();
+        ModelDao modelDao = mock(ModelDao.class);
+        KNNVectorFieldMapper.TypeParser typeParser = new KNNVectorFieldMapper.TypeParser(() -> modelDao);
+
+        for (CompressionLevel supported : java.util.List.of(CompressionLevel.x4, CompressionLevel.x8, CompressionLevel.x16)) {
+            XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()
+                .startObject()
+                .field(TYPE_FIELD_NAME, KNN_VECTOR_TYPE)
+                .field(DIMENSION_FIELD_NAME, TEST_DIMENSION)
+                .field(VECTOR_DATA_TYPE_FIELD, VectorDataType.HALF_FLOAT.getValue())
+                .field(COMPRESSION_LEVEL_PARAMETER, supported.getName())
+                .startObject(KNN_METHOD)
+                .field(NAME, METHOD_FLAT)
+                .endObject()
+                .endObject();
+
+            typeParser.parse(fieldName, xContentBuilderToMap(xContentBuilder), buildParserContext(indexName, settings));
+        }
     }
 
     @SneakyThrows

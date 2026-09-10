@@ -19,6 +19,8 @@ import org.opensearch.knn.index.mapper.Mode;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.opensearch.knn.common.KNNConstants.METHOD_FLAT;
 import static org.opensearch.knn.common.KNNConstants.MODE_PARAMETER;
@@ -42,7 +44,11 @@ public class LuceneFlatMethodResolver extends AbstractMethodResolver {
         CompressionLevel.x16,
         CompressionLevel.x8
     );
-    static final Set<CompressionLevel> SUPPORTED_COMPRESSION_LEVELS_HALF_FLOAT = Set.of(CompressionLevel.x1, CompressionLevel.x16);
+    // x1 stores raw fp16 with no encoder; the quantized levels come from LuceneSQEncoder's one table.
+    static final Set<CompressionLevel> SUPPORTED_COMPRESSION_LEVELS_HALF_FLOAT = Stream.concat(
+        Stream.of(CompressionLevel.x1),
+        LuceneSQEncoder.halfFloatSQCompressionLevels().stream()
+    ).collect(Collectors.toUnmodifiableSet());
     static final CompressionLevel DEFAULT_COMPRESSION = CompressionLevel.x32;
     static final CompressionLevel DEFAULT_COMPRESSION_HALF_FLOAT = CompressionLevel.x16;
 

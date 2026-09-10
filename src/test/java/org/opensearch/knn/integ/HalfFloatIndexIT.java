@@ -457,7 +457,8 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
     @SneakyThrows
     public void testHalfFloatFlat_withUnsupportedCompression_shouldFail() {
         // half_float supports only 1x and 16x - every level defined against FLOAT's 32 bits is rejected.
-        for (String compression : new String[] { "2x", "4x", "8x", "32x" }) {
+        // x4 and x8 are supported now; x2 would be 8-bit SQ and x32 would need half a bit per dimension.
+        for (String compression : new String[] { "2x", "32x" }) {
             String mapping = KNNJsonIndexMappingsBuilder.builder()
                 .fieldName(FIELD_NAME)
                 .dimension(DIMENSION)
@@ -664,7 +665,8 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
     @SneakyThrows
     public void testHalfFloatHnsw_withUnsupportedCompression_shouldFail() {
         // half_float supports only 1x and 16x - every level defined against FLOAT's 32 bits is rejected.
-        for (String compression : new String[] { "2x", "4x", "8x", "32x" }) {
+        // x4 and x8 are supported now; x2 would be 8-bit SQ and x32 would need half a bit per dimension.
+        for (String compression : new String[] { "2x", "32x" }) {
             String mapping = KNNJsonIndexMappingsBuilder.builder()
                 .fieldName(FIELD_NAME)
                 .dimension(DIMENSION)
@@ -1313,6 +1315,101 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
             + bits
             + "}}}"
             + "}}}}";
+    }
+
+    // ────────────────────────────────────────────────────────────────────────────
+    // Lucene SQ at half_float's middle widths - x4 is 4-bit, x8 is 2-bit, measured against its own
+    // 16 bits. Same codes Faiss writes at those levels; only the engine differs.
+    // ────────────────────────────────────────────────────────────────────────────
+
+    @SneakyThrows
+    public void testHalfFloatLuceneQuantizedLevels_indexAndSearch() {
+        for (String method : new String[] { "flat", "hnsw" }) {
+            for (String compression : new String[] { "4x", "8x", "16x" }) {
+                final String indexName = INDEX_NAME + "_" + method + "_" + compression;
+                createKnnIndex(indexName, buildHalfFloatLuceneMapping("l2", method, compression, DIMENSION));
+
+                addKnnDoc(indexName, "1", FIELD_NAME, new Float[] { 1.0f, 2.0f, 3.0f, 4.0f });
+                addKnnDoc(indexName, "2", FIELD_NAME, new Float[] { 5.0f, 6.0f, 7.0f, 8.0f });
+                addKnnDoc(indexName, "3", FIELD_NAME, new Float[] { 0.1f, 0.2f, 0.3f, 0.4f });
+                refreshIndex(indexName);
+                forceMergeKnnIndex(indexName, 1);
+
+                Response response = searchKNNIndex(
+                    indexName,
+                    buildSearchQuery(FIELD_NAME, 3, new float[] { 0.0f, 0.0f, 0.0f, 0.0f }, null),
+                    3
+                );
+                List<KNNResult> results = parseSearchResponse(EntityUtils.toString(response.getEntity()), FIELD_NAME);
+
+                assertEquals(method + " " + compression + " -> wrong hit count", 3, results.size());
+                deleteKNNIndex(indexName);
+            }
+        }
+    }
+
+    /** Cosine normalizes FP16 vectors on write and the correction factors derive from the normalized
+     *  values, so the quantized widths need cosine coverage of their own, not just L2. */
+    @SneakyThrows
+    public void testHalfFloatLuceneQuantizedLevels_cosineSpace() {
+        for (String method : new String[] { "flat", "hnsw" }) {
+            for (String compression : new String[] { "4x", "8x", "16x" }) {
+                final String indexName = INDEX_NAME + "_cos_" + method + "_" + compression;
+                createKnnIndex(indexName, buildHalfFloatLuceneMapping("cosinesimil", method, compression, DIMENSION));
+
+                addKnnDoc(indexName, "1", FIELD_NAME, new Float[] { 1.0f, 0.0f, 0.0f, 0.0f });
+                addKnnDoc(indexName, "2", FIELD_NAME, new Float[] { 0.0f, 1.0f, 0.0f, 0.0f });
+                addKnnDoc(indexName, "3", FIELD_NAME, new Float[] { 1.0f, 1.0f, 0.0f, 0.0f });
+                refreshIndex(indexName);
+
+                Response response = searchKNNIndex(
+                    indexName,
+                    buildSearchQuery(FIELD_NAME, 3, new float[] { 1.0f, 0.0f, 0.0f, 0.0f }, null),
+                    3
+                );
+                List<KNNResult> results = parseSearchResponse(EntityUtils.toString(response.getEntity()), FIELD_NAME);
+
+                assertEquals(method + " " + compression + " -> wrong hit count", 3, results.size());
+                deleteKNNIndex(indexName);
+            }
+        }
+    }
+
+    @SneakyThrows
+    public void testHalfFloatLucene_withUnreachableCompression_shouldFail() {
+        for (String method : new String[] { "flat", "hnsw" }) {
+            for (String compression : new String[] { "2x", "32x" }) {
+                final String indexName = INDEX_NAME + "_bad_" + method + "_" + compression;
+                ResponseException ex = expectThrows(
+                    ResponseException.class,
+                    () -> createKnnIndex(indexName, buildHalfFloatLuceneMapping("l2", method, compression, DIMENSION))
+                );
+                assertTrue(method + " " + compression + " -> " + ex.getMessage(), ex.getMessage().contains("compression"));
+            }
+        }
+    }
+
+    private String buildHalfFloatLuceneMapping(String spaceType, String methodName, String compressionLevel, int dimension) {
+        return "{"
+            + "\"properties\":{\""
+            + FIELD_NAME
+            + "\":{"
+            + "\"type\":\"knn_vector\","
+            + "\"dimension\":"
+            + dimension
+            + ","
+            + "\"data_type\":\"half_float\","
+            + "\"compression_level\":\""
+            + compressionLevel
+            + "\","
+            + "\"method\":{\"name\":\""
+            + methodName
+            + "\","
+            + ("hnsw".equals(methodName) ? "\"engine\":\"lucene\"," : "")
+            + "\"space_type\":\""
+            + spaceType
+            + "\"}"
+            + "}}}";
     }
 
     private String buildHalfFloatMapping(String spaceType) throws Exception {

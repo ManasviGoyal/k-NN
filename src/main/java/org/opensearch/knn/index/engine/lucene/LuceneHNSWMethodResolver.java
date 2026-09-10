@@ -24,6 +24,8 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.opensearch.knn.common.KNNConstants.COMPRESSION_LEVEL_PARAMETER;
 import static org.opensearch.knn.common.KNNConstants.LUCENE_SCALAR_QUANTIZER_DEFAULT_BITS_AFTER_V360;
@@ -46,7 +48,12 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
         CompressionLevel.x4,
         CompressionLevel.x32
     );
-    private static final Set<CompressionLevel> SUPPORTED_COMPRESSION_LEVELS_HALF_FLOAT = Set.of(CompressionLevel.x1, CompressionLevel.x16);
+    // x1 stores raw fp16 with no encoder; everything above it is whatever LuceneSQEncoder can quantize
+    // half_float to. Derived from that one table so a width added or removed there cannot leave this behind.
+    private static final Set<CompressionLevel> SUPPORTED_COMPRESSION_LEVELS_HALF_FLOAT = Stream.concat(
+        Stream.of(CompressionLevel.x1),
+        LuceneSQEncoder.halfFloatSQCompressionLevels().stream()
+    ).collect(Collectors.toUnmodifiableSet());
     static final CompressionLevel DEFAULT_COMPRESSION_HALF_FLOAT = CompressionLevel.x1;
 
     @Override
@@ -147,7 +154,7 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
         }
 
         if (knnMethodConfigContext.getVectorDataType() == VectorDataType.HALF_FLOAT) {
-            return getDataTypeAwareDefaultCompressionLevel(knnMethodConfigContext) == CompressionLevel.x16;
+            return LuceneSQEncoder.halfFloatBitsFor(getDataTypeAwareDefaultCompressionLevel(knnMethodConfigContext)) != null;
         }
 
         return super.shouldEncoderBeResolved(knnMethodContext, knnMethodConfigContext);
@@ -206,11 +213,21 @@ public class LuceneHNSWMethodResolver extends AbstractMethodResolver {
             CompressionLevel effectiveCompression = CompressionLevel.isConfigured(knnMethodConfigContext.getCompressionLevel())
                 ? knnMethodConfigContext.getCompressionLevel()
                 : getDataTypeAwareDefaultCompressionLevel(knnMethodConfigContext);
-            boolean useNewDefault = isV360OrLater
-                && LuceneSQEncoder.Bits.fromValue(LUCENE_SCALAR_QUANTIZER_DEFAULT_BITS_AFTER_V360)
-                    .getCompressionLevel(knnMethodConfigContext.getVectorDataType()) == effectiveCompression;
-            encoderComponentContext.getParameters()
-                .put(LUCENE_SQ_BITS, useNewDefault ? LUCENE_SCALAR_QUANTIZER_DEFAULT_BITS_AFTER_V360 : LUCENE_SQ_DEFAULT_BITS);
+            // half_float has three coded widths, so the width follows from the level rather than from a
+            // two-way choice between the post-3.6 default and the legacy one. The FLOAT branch below only
+            // ever picks between 1-bit and 7-bit, which is all FLOAT supports on this engine.
+            final LuceneSQEncoder.Bits halfFloatBits = knnMethodConfigContext.getVectorDataType() == VectorDataType.HALF_FLOAT
+                ? LuceneSQEncoder.halfFloatBitsFor(effectiveCompression)
+                : null;
+            if (halfFloatBits != null) {
+                encoderComponentContext.getParameters().put(LUCENE_SQ_BITS, halfFloatBits.getValue());
+            } else {
+                boolean useNewDefault = isV360OrLater
+                    && LuceneSQEncoder.Bits.fromValue(LUCENE_SCALAR_QUANTIZER_DEFAULT_BITS_AFTER_V360)
+                        .getCompressionLevel(knnMethodConfigContext.getVectorDataType()) == effectiveCompression;
+                encoderComponentContext.getParameters()
+                    .put(LUCENE_SQ_BITS, useNewDefault ? LUCENE_SCALAR_QUANTIZER_DEFAULT_BITS_AFTER_V360 : LUCENE_SQ_DEFAULT_BITS);
+            }
         }
         String encoderName = encoderComponentContext.getName();
         Encoder encoder = SUPPORTED_ENCODERS.get(encoderName);
