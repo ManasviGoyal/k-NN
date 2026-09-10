@@ -130,11 +130,12 @@ public final class EngineResolver {
         }
 
         if (compressionLevel == CompressionLevel.x4) {
-            // Lucene is the only engine that reaches 4x for FLOAT - sq bits=7 against its 32 bits. For
-            // HALF_FLOAT the reverse holds: Lucene has no 4-bit SQ width, while Faiss reaches x4 with
-            // sq bits=4 against half_float's 16. Defaulting to Lucene there would hand the config to an
-            // engine that rejects it, so a user who wrote only compression_level 4x would get a 400
-            // while 8x and 16x resolved fine.
+            // x4 means a different width per data type: FLOAT reaches it with Lucene's sq bits=7 against
+            // its 32 bits, half_float with sq bits=4 against its 16. Both engines can serve half_float at
+            // x4, so this is a consistency choice rather than a capability one - every other configured
+            // half_float level falls through to FAISS below, and routing x4 to Lucene would split
+            // half_float's ladder across two engines at one rung. An explicit engine still wins: a user
+            // who asks for engine=lucene with half_float x4 gets it.
             return VectorDataType.HALF_FLOAT == knnMethodConfigContext.getVectorDataType() ? KNNEngine.FAISS : KNNEngine.LUCENE;
         }
         if (CompressionLevel.isConfigured(compressionLevel) == false || compressionLevel == CompressionLevel.x1) {
