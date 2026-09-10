@@ -11,6 +11,7 @@ import org.opensearch.Version;
 import org.opensearch.common.logging.DeprecationLogger;
 import org.opensearch.index.mapper.MapperParsingException;
 import org.opensearch.knn.index.SpaceType;
+import org.opensearch.knn.index.VectorDataType;
 import org.opensearch.knn.index.mapper.CompressionLevel;
 import org.opensearch.knn.index.mapper.Mode;
 
@@ -129,8 +130,12 @@ public final class EngineResolver {
         }
 
         if (compressionLevel == CompressionLevel.x4) {
-            // Lucene is only engine that supports 4x - so we have to default to it here.
-            return KNNEngine.LUCENE;
+            // Lucene is the only engine that reaches 4x for FLOAT - sq bits=7 against its 32 bits. For
+            // HALF_FLOAT the reverse holds: Lucene has no 4-bit SQ width, while Faiss reaches x4 with
+            // sq bits=4 against half_float's 16. Defaulting to Lucene there would hand the config to an
+            // engine that rejects it, so a user who wrote only compression_level 4x would get a 400
+            // while 8x and 16x resolved fine.
+            return VectorDataType.HALF_FLOAT == knnMethodConfigContext.getVectorDataType() ? KNNEngine.FAISS : KNNEngine.LUCENE;
         }
         if (CompressionLevel.isConfigured(compressionLevel) == false || compressionLevel == CompressionLevel.x1) {
             // For 1x or no compression, we need to default to faiss if mode is provided and use nmslib otherwise based on version check

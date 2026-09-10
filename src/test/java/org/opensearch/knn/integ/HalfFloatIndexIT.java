@@ -981,6 +981,40 @@ public class HalfFloatIndexIT extends KNNRestTestCase {
         );
     }
 
+    /**
+     * compression_level alone has to be enough - the whole point of the parameter for half_float, which
+     * rejects an explicit encoder and (for method=flat) an explicit engine. x4 is the trap: EngineResolver
+     * routes that level to Lucene because Lucene is the only engine reaching 4x for FLOAT, and Lucene has
+     * no 4-bit width for half_float. Without the data-type check there, this returns 400 for 4x while 8x
+     * and 16x resolve fine.
+     */
+    @SneakyThrows
+    public void testHalfFloatCompressionLevelOnly_resolvesWithoutAnEngine() {
+        for (String compression : new String[] { "4x", "8x", "16x" }) {
+            final String indexName = INDEX_NAME + "_noengine_" + compression;
+            final String mapping = "{\"properties\":{\""
+                + FIELD_NAME
+                + "\":{\"type\":\"knn_vector\",\"dimension\":"
+                + DIMENSION
+                + ",\"data_type\":\"half_float\",\"compression_level\":\""
+                + compression
+                + "\"}}}";
+
+            createKnnIndex(indexName, mapping);
+
+            addKnnDoc(indexName, "1", FIELD_NAME, new Float[] { 1.0f, 2.0f, 3.0f, 4.0f });
+            addKnnDoc(indexName, "2", FIELD_NAME, new Float[] { 0.1f, 0.2f, 0.3f, 0.4f });
+            refreshIndex(indexName);
+
+            Response response = searchKNNIndex(indexName, buildSearchQuery(FIELD_NAME, 2, new float[] { 0.0f, 0.0f, 0.0f, 0.0f }, null), 2);
+            List<KNNResult> results = parseSearchResponse(EntityUtils.toString(response.getEntity()), FIELD_NAME);
+
+            assertEquals(compression + " -> wrong hit count", 2, results.size());
+
+            deleteKNNIndex(indexName);
+        }
+    }
+
     @SneakyThrows
     public void testHalfFloatFaissHnswMultiBit_cosineSpace() {
         for (String compression : new String[] { "4x", "8x", "16x" }) {
