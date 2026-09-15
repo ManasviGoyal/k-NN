@@ -546,20 +546,22 @@ public class ResolvedIndexSpecTests extends KNNTestCase {
         assertTrue(spec.supportsRemoteIndexBuild());
     }
 
-    public void testSupportsRemoteIndexBuild_whenHalfFloatSQOneBit_thenNotSupported() {
-        // isSQMultiBit() is data-type agnostic, so without an explicit half_float guard this would
-        // report true and hand the remote build service fp16 flat storage it reads as fp32.
+    public void testSupportsRemoteIndexBuild_whenHalfFloatSQOneBit_thenSupported() {
+        // isSQMultiBit() is data-type agnostic - half_float SQ 1-bit routes through the same
+        // BinaryIndexService/IBHF path as float SQ 1-bit, so it's remote-build eligible too.
         ResolvedIndexSpec spec = baseFaissSQ1Bit().vectorDataType(VectorDataType.HALF_FLOAT).compressionLevel(CompressionLevel.x16).build();
         assertTrue("precondition: half_float SQ 1-bit is still SQ multi-bit", spec.isSQMultiBit());
-        assertFalse(spec.supportsRemoteIndexBuild());
+        assertTrue(spec.supportsRemoteIndexBuild());
     }
 
-    public void testSupportsRemoteIndexBuild_whenHalfFloatFlat_thenNotSupported() {
+    public void testSupportsRemoteIndexBuild_whenHalfFloatFlat_thenSupported() {
+        // The remote build service already speaks a genuine 2-byte fp16 wire format for
+        // "half_float"/DataType.FLOAT16 (shared with the existing FLOAT+sq,bits:16 case).
         ResolvedIndexSpec spec = baseFaiss().vectorDataType(VectorDataType.HALF_FLOAT)
             .encoderType(Encoder.EncoderType.FLAT)
             .compressionLevel(CompressionLevel.x1)
             .build();
-        assertFalse(spec.supportsRemoteIndexBuild());
+        assertTrue(spec.supportsRemoteIndexBuild());
     }
 
     // --- Coverage: isSQMultiBit (bits ∈ {1, 2, 4}) ---
