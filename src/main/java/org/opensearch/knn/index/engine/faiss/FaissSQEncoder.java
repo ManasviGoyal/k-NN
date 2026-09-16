@@ -116,26 +116,6 @@ public class FaissSQEncoder implements Encoder {
         return METHOD_COMPONENT;
     }
 
-    /**
-     * Compression {@code bits} achieves for {@code vectorDataType}. {@link QuantizationBits} maps a bit
-     * width to one compression level measured against FLOAT's 32 bits, so bits=1 is x32 there. Taking
-     * HALF_FLOAT's 16 bits down to 1 saves 16x, not 32x. HALF_FLOAT only supports bits=1 (see
-     * {@link FaissHNSWMethod#validate}) — bits=2/4/16 for HALF_FLOAT would otherwise silently fall through
-     * to {@code bits.getCompressionLevel()}, which is computed against FLOAT's 32-bit baseline and would
-     * be wrong for HALF_FLOAT's 16-bit baseline, so reject defensively rather than return a wrong value.
-     */
-    private static CompressionLevel compressionLevelFor(QuantizationBits bits, VectorDataType vectorDataType) {
-        if (vectorDataType == VectorDataType.HALF_FLOAT) {
-            if (bits == QuantizationBits.ONE) {
-                return CompressionLevel.x16;
-            }
-            throw new IllegalArgumentException(
-                String.format(Locale.ROOT, "half_float only supports bits=1 for SQ quantization, got bits=%d", bits.getValue())
-            );
-        }
-        return bits.getCompressionLevel();
-    }
-
     @Override
     public CompressionLevel calculateCompressionLevel(
         MethodComponentContext methodComponentContext,
@@ -144,7 +124,7 @@ public class FaissSQEncoder implements Encoder {
         if (methodComponentContext != null && methodComponentContext.getParameters().containsKey(SQ_BITS)) {
             Object bitsObj = methodComponentContext.getParameters().get(SQ_BITS);
             if (bitsObj instanceof Integer) {
-                return compressionLevelFor(
+                return QuantizationBits.getCompressionLevel(
                     QuantizationBits.fromValue((Integer) bitsObj),
                     knnMethodConfigContext == null ? null : knnMethodConfigContext.getVectorDataType()
                 );
@@ -267,7 +247,7 @@ public class FaissSQEncoder implements Encoder {
 
             CompressionLevel configuredCompression = configContext.getCompressionLevel();
             if (CompressionLevel.isConfigured(configuredCompression)) {
-                CompressionLevel expectedCompression = compressionLevelFor(
+                CompressionLevel expectedCompression = QuantizationBits.getCompressionLevel(
                     QuantizationBits.fromValue(bits),
                     configContext.getVectorDataType()
                 );

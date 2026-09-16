@@ -51,9 +51,14 @@ public class KNN1040HalfFloatVectorScorerTests extends KNNTestCase {
     }
 
     @SneakyThrows
-    public void testGetRandomVectorScorerSupplier_cosine_neverUsesNativeTierRegardlessOfSimd() {
-        // No native FP16 kernel exists for COSINE yet so must fall back even when SIMD is available.
-        assertFallbackTierUsed(VectorSimilarityFunction.COSINE, true);
+    public void testGetRandomVectorScorerSupplier_cosineWithSimdSupported_usesNativeTier() {
+        // Since #3386, COSINE binds to the FP16_COSINE kernel, so it takes the native tier exactly
+        // like EUCLIDEAN and MAXIMUM_INNER_PRODUCT — it no longer falls through to the Lucene delegate.
+        assertNativeTierUsed(VectorSimilarityFunction.COSINE, true);
+    }
+
+    @SneakyThrows
+    public void testGetRandomVectorScorerSupplier_cosineWithoutSimdSupported_usesFallbackTier() {
         assertFallbackTierUsed(VectorSimilarityFunction.COSINE, false);
     }
 

@@ -293,6 +293,11 @@ public class KNNRestTestCase extends ODFERestTestCase {
         putMappingRequest(index, mapping);
     }
 
+    protected void createTrainingIndex(String index, String mapping) throws IOException {
+        createIndex(index, Settings.builder().put("number_of_shards", 1).put("number_of_replicas", 0).put(KNN_INDEX, false).build());
+        putMappingRequest(index, mapping);
+    }
+
     /**
      * Create KNN Index with custom shard num
      */
@@ -2953,6 +2958,35 @@ public class KNNRestTestCase extends ODFERestTestCase {
         final Map<String, Object> docMap = (Map<String, Object>) responseMap.get(DOCUMENT_FIELD_SOURCE);
 
         return docMap;
+    }
+
+    /**
+     * Bulk-index KNN docs using explicit document ids (preserving the caller's id scheme, e.g. the ids
+     * from a test dataset). Use this instead of the sequential-id overload when a test later references
+     * documents by their original id (update/delete/get).
+     */
+    public void bulkAddKnnDocs(String index, String fieldName, int[] docIds, float[][] indexVectors, int docCount) throws IOException {
+        Request request = new Request("POST", "/_bulk");
+        request.addParameter("refresh", "true");
+        StringBuilder sb = new StringBuilder();
+
+        for (int i = 0; i < docCount; i++) {
+            sb.append("{ \"index\" : { \"_index\" : \"")
+                .append(index)
+                .append("\", \"_id\" : \"")
+                .append(docIds[i])
+                .append("\" } }\n")
+                .append("{ \"")
+                .append(fieldName)
+                .append("\" : ")
+                .append(Arrays.toString(indexVectors[i]))
+                .append(" }\n");
+        }
+
+        request.setJsonEntity(sb.toString());
+
+        Response response = client().performRequest(request);
+        assertEquals(200, response.getStatusLine().getStatusCode());
     }
 
 }

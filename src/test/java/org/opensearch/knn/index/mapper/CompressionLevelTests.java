@@ -13,7 +13,6 @@ import org.opensearch.knn.index.engine.Encoder;
 import org.opensearch.knn.index.engine.Encoder.QuantizationBits;
 import org.opensearch.knn.index.engine.KNNEngine;
 import org.opensearch.knn.index.engine.ResolvedIndexSpec;
-import org.opensearch.knn.index.engine.lucene.LuceneSQEncoder;
 import org.opensearch.knn.index.query.rescore.RescoreContext;
 import org.opensearch.knn.quantization.enums.ScalarQuantizationType;
 
@@ -266,9 +265,6 @@ public class CompressionLevelTests extends KNNTestCase {
         assertEquals(CompressionLevel.x32, QuantizationBits.ONE.getCompressionLevel());
         assertEquals(1, QuantizationBits.ONE.getValue());
 
-        assertEquals(CompressionLevel.x32, LuceneSQEncoder.Bits.ONE.getCompressionLevel(VectorDataType.FLOAT));
-        assertEquals(1, LuceneSQEncoder.Bits.ONE.getValue());
-
         assertEquals(1, ScalarQuantizationType.ONE_BIT.getId());
     }
 
@@ -322,12 +318,30 @@ public class CompressionLevelTests extends KNNTestCase {
     }
 
     public void testX32ConsistentAcrossEngineEncoders() {
-        QuantizationBits faissBits1 = QuantizationBits.fromValue(1);
-        LuceneSQEncoder.Bits luceneBits1 = LuceneSQEncoder.Bits.fromValue(1);
+        QuantizationBits bits1 = QuantizationBits.fromValue(1);
+        assertEquals(CompressionLevel.x32, bits1.getCompressionLevel());
+    }
 
-        assertEquals(faissBits1.getCompressionLevel(), luceneBits1.getCompressionLevel(VectorDataType.FLOAT));
-        assertEquals(CompressionLevel.x32, faissBits1.getCompressionLevel());
-        assertEquals(CompressionLevel.x32, luceneBits1.getCompressionLevel(VectorDataType.FLOAT));
+    /**
+     * The data-type-aware overloads: compression levels are measured against FLOAT's 32 bits, so
+     * half_float's 16-bit baseline makes bits=1 a 16x saving rather than 32x.
+     */
+    public void testQuantizationBits_dataTypeAwareCompressionMapping() {
+        assertEquals(CompressionLevel.x32, QuantizationBits.getCompressionLevel(QuantizationBits.ONE, VectorDataType.FLOAT));
+        assertEquals(CompressionLevel.x16, QuantizationBits.getCompressionLevel(QuantizationBits.ONE, VectorDataType.HALF_FLOAT));
+
+        assertEquals(QuantizationBits.TWO, QuantizationBits.fromCompressionLevel(CompressionLevel.x16, VectorDataType.FLOAT));
+        assertEquals(QuantizationBits.ONE, QuantizationBits.fromCompressionLevel(CompressionLevel.x16, VectorDataType.HALF_FLOAT));
+    }
+
+    public void testQuantizationBits_halfFloatRejectsWidthsOtherThanOne() {
+        for (QuantizationBits bits : new QuantizationBits[] {
+            QuantizationBits.TWO,
+            QuantizationBits.FOUR,
+            QuantizationBits.SEVEN,
+            QuantizationBits.SIXTEEN }) {
+            expectThrows(IllegalArgumentException.class, () -> QuantizationBits.getCompressionLevel(bits, VectorDataType.HALF_FLOAT));
+        }
     }
 
     private ResolvedIndexSpec buildSpec(CompressionLevel compression, Mode mode, int dimension, KNNEngine engine) {
