@@ -166,8 +166,37 @@ public class LuceneSQFlatIT extends KNNRestTestCase {
     }
 
     @SneakyThrows
+    public void testFlatMethod_withX1Compression_thenSuccess() {
+        XContentBuilder builder = XContentFactory.jsonBuilder()
+            .startObject()
+            .startObject(PROPERTIES_FIELD)
+            .startObject(FIELD_NAME)
+            .field(TYPE_FIELD, KNN_VECTOR_TYPE)
+            .field(DIMENSION_FIELD, DIMENSION)
+            .field(COMPRESSION_LEVEL_PARAMETER, "1x")
+            .startObject(KNNConstants.KNN_METHOD)
+            .field(KNNConstants.NAME, METHOD_FLAT)
+            .field(KNNConstants.METHOD_PARAMETER_SPACE_TYPE, SpaceType.L2.getValue())
+            .endObject()
+            .endObject()
+            .endObject()
+            .endObject();
+        createKnnIndex(INDEX_NAME, builder.toString());
+        indexTestDocs();
+
+        float[] queryVector = generateVector(DIMENSION, 1.0f);
+        Response response = searchKNNIndex(INDEX_NAME, new KNNQueryBuilder(FIELD_NAME, queryVector, 3), 3);
+        String responseBody = EntityUtils.toString(response.getEntity());
+        List<KNNResult> results = parseSearchResponse(responseBody, FIELD_NAME);
+        assertEquals(3, results.size());
+        assertEquals("0", results.get(0).getDocId());
+        assertEquals("1", results.get(1).getDocId());
+        assertEquals("2", results.get(2).getDocId());
+    }
+
+    @SneakyThrows
     public void testFlatMethod_withUnsupportedCompression_thenFail() {
-        String[] unsupportedCompressions = { "1x", "2x", "4x", "64x" };
+        String[] unsupportedCompressions = { "2x", "4x", "64x" };
         for (String compression : unsupportedCompressions) {
             XContentBuilder builder = XContentFactory.jsonBuilder()
                 .startObject()

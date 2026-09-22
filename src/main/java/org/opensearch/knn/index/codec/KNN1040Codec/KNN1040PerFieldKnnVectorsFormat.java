@@ -9,6 +9,8 @@ import org.apache.lucene.backward_codecs.lucene99.Lucene99RWHnswScalarQuantizedV
 import org.apache.lucene.codecs.lucene104.Lucene104ScalarQuantizedVectorsFormat;
 import org.apache.lucene.util.quantization.QuantizedByteVectorValues.ScalarEncoding;
 import org.apache.lucene.codecs.KnnVectorsFormat;
+import org.apache.lucene.codecs.hnsw.FlatVectorScorerUtil;
+import org.apache.lucene.codecs.lucene99.Lucene99FlatVectorsFormat;
 import org.apache.lucene.codecs.lucene99.Lucene99HnswVectorsFormat;
 
 import org.opensearch.common.collect.Tuple;
@@ -158,6 +160,9 @@ public class KNN1040PerFieldKnnVectorsFormat extends KNN1040BasePerFieldKnnVecto
                     );
                 }
                 return new KNN1040HalfFloatFlatVectorsFormat();
+            }
+            if (ctx.getCompressionLevel() == CompressionLevel.x1) {
+                return new Lucene99FlatVectorsFormat(FlatVectorScorerUtil.getLucene99FlatVectorsScorer());
             }
             return new KNN1040ScalarQuantizedVectorsFormat(resolveFlatScalarEncoding(ctx.getCompressionLevel(), VectorDataType.FLOAT));
         });

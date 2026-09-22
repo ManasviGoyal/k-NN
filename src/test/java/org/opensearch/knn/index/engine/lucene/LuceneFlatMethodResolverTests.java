@@ -19,7 +19,6 @@ import org.opensearch.knn.index.mapper.CompressionLevel;
 import org.opensearch.knn.index.mapper.Mode;
 
 import java.util.Map;
-import java.util.Set;
 
 import static org.opensearch.knn.common.KNNConstants.METHOD_FLAT;
 
@@ -65,6 +64,26 @@ public class LuceneFlatMethodResolverTests extends KNNTestCase {
         assertEquals(CompressionLevel.x32, resolvedMethodContext.getCompressionLevel());
     }
 
+    public void testResolveMethod_whenFlatMethodWithExplicitX1Compression_thenResolve() {
+        KNNMethodContext flatMethodContext = new KNNMethodContext(
+            KNNEngine.LUCENE,
+            SpaceType.L2,
+            new MethodComponentContext(METHOD_FLAT, Map.of())
+        );
+        ResolvedMethodContext resolvedMethodContext = TEST_RESOLVER.resolveMethod(
+            flatMethodContext,
+            KNNMethodConfigContext.builder()
+                .vectorDataType(VectorDataType.FLOAT)
+                .compressionLevel(CompressionLevel.x1)
+                .versionCreated(Version.CURRENT)
+                .build(),
+            false,
+            SpaceType.L2
+        );
+        assertEquals(METHOD_FLAT, resolvedMethodContext.getKnnMethodContext().getMethodComponentContext().getName());
+        assertEquals(CompressionLevel.x1, resolvedMethodContext.getCompressionLevel());
+    }
+
     public void testResolveMethod_whenFlatMethodWithX16Compression_thenResolve() {
         KNNMethodContext flatMethodContext = new KNNMethodContext(
             KNNEngine.LUCENE,
@@ -105,10 +124,11 @@ public class LuceneFlatMethodResolverTests extends KNNTestCase {
         assertEquals(CompressionLevel.x8, resolvedMethodContext.getCompressionLevel());
     }
 
+    // Derives the unsupported set from LuceneFlatMethodResolver.SUPPORTED_COMPRESSION_LEVELS so this test
+    // tracks the resolver's actual supported set rather than a second hardcoded list.
     public void testResolveMethod_whenFlatMethodWithUnsupportedCompression_thenThrow() {
-        final Set<CompressionLevel> supported = Set.of(CompressionLevel.x8, CompressionLevel.x16, CompressionLevel.x32);
         for (CompressionLevel level : CompressionLevel.values()) {
-            if (supported.contains(level) || level == CompressionLevel.NOT_CONFIGURED) {
+            if (LuceneFlatMethodResolver.SUPPORTED_COMPRESSION_LEVELS.contains(level) || level == CompressionLevel.NOT_CONFIGURED) {
                 continue;
             }
             KNNMethodContext flatMethodContext = new KNNMethodContext(
@@ -133,7 +153,7 @@ public class LuceneFlatMethodResolverTests extends KNNTestCase {
             assertTrue("level=" + level + " msg=" + msg, msg.contains("[" + METHOD_FLAT + "]"));
             assertTrue("level=" + level + " msg=" + msg, msg.contains("only supports these compression levels"));
             // The message should list the supported levels — spot-check each name is present.
-            for (CompressionLevel supportedLevel : supported) {
+            for (CompressionLevel supportedLevel : LuceneFlatMethodResolver.SUPPORTED_COMPRESSION_LEVELS) {
                 assertTrue("level=" + level + " supportedLevel=" + supportedLevel + " msg=" + msg, msg.contains(supportedLevel.getName()));
             }
         }

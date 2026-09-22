@@ -28,8 +28,9 @@ import static org.opensearch.knn.index.engine.lucene.LuceneFlatMethod.FLAT_METHO
  * Resolves method configuration for the Lucene flat method. For FLOAT vectors, the flat method uses scalar
  * quantization without an HNSW graph (brute-force scan). Supported compression levels for FLOAT are
  * {@link org.opensearch.knn.index.mapper.CompressionLevel#x32} (SQ 1-bit),
- * {@link org.opensearch.knn.index.mapper.CompressionLevel#x16} (SQ 2-bit), and
- * {@link org.opensearch.knn.index.mapper.CompressionLevel#x8} (SQ 4-bit).
+ * {@link org.opensearch.knn.index.mapper.CompressionLevel#x16} (SQ 2-bit),
+ * {@link org.opensearch.knn.index.mapper.CompressionLevel#x8} (SQ 4-bit), and
+ * {@link org.opensearch.knn.index.mapper.CompressionLevel#x1} (full precision, no quantization).
  * HALF_FLOAT vectors don't go through an encoder - compression is expressed purely via
  * {@link org.opensearch.knn.index.mapper.CompressionLevel}, currently supported compression levels
  * for HALF_FLOAT are {@link org.opensearch.knn.index.mapper.CompressionLevel#x16} (SQ 1-bit),
@@ -40,6 +41,7 @@ import static org.opensearch.knn.index.engine.lucene.LuceneFlatMethod.FLAT_METHO
 public class LuceneFlatMethodResolver extends AbstractMethodResolver {
 
     static final Set<CompressionLevel> SUPPORTED_COMPRESSION_LEVELS = Set.of(
+        CompressionLevel.x1,
         CompressionLevel.x32,
         CompressionLevel.x16,
         CompressionLevel.x8
