@@ -206,15 +206,17 @@ public final class ResolvedIndexSpec {
                 .build();
         }
 
-        if (compressionLevel == CompressionLevel.x32 && isMethodFlat()) {
-            return RescoreContext.builder().oversampleFactor(FLAT_OVERSAMPLE_FACTOR).userProvided(false).build();
-        }
-
-        if (isMethodFlat() && (compressionLevel == CompressionLevel.x16 || compressionLevel == CompressionLevel.x8)) {
-            return RescoreContext.builder()
-                .oversampleFactor(RescoreContext.SQ_MULTI_BIT_DEFAULT_OVERSAMPLE_FACTOR)
-                .userProvided(false)
-                .build();
+        if (isMethodFlat()) {
+            Encoder.QuantizationBits flatBits = Encoder.QuantizationBits.fromCompressionLevel(compressionLevel, vectorDataType);
+            if (flatBits == Encoder.QuantizationBits.ONE) {
+                return RescoreContext.builder().oversampleFactor(FLAT_OVERSAMPLE_FACTOR).userProvided(false).build();
+            }
+            if (flatBits == Encoder.QuantizationBits.TWO || flatBits == Encoder.QuantizationBits.FOUR) {
+                return RescoreContext.builder()
+                    .oversampleFactor(RescoreContext.SQ_MULTI_BIT_DEFAULT_OVERSAMPLE_FACTOR)
+                    .userProvided(false)
+                    .build();
+            }
         }
 
         if (compressionLevel.isModeValidForRescore(mode)) {
