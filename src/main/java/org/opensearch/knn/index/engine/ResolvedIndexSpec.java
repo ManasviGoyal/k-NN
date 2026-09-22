@@ -286,6 +286,7 @@ public final class ResolvedIndexSpec {
      *   <li>BYTE with FLAT encoder</li>
      *   <li>HALF_FLOAT with FLAT encoder (native fp16 storage)</li>
      *   <li>FLOAT with SQ encoder at intermediate bit widths (2, 4, 7 bits)</li>
+     *   <li>HALF_FLOAT with SQ encoder at intermediate bit widths (2, 4 bits)</li>
      * </ul>
      *
      * <p>Everything else returns false — e.g. the PQ encoder and non-FLAT binary/byte configs. New
