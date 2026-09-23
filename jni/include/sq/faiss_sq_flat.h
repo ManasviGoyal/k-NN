@@ -136,7 +136,8 @@ namespace knn_jni {
         // with a byte remainder loop for the trailing bytes.
         static inline uint64_t popcountAndPlane(const uint8_t* a, const uint8_t* b, const uint64_t planeBytes) {
             const uint64_t words = planeBytes >> 3;
-            uint64_t pc = 0;
+            // uint32_t: a popcount over one plane is <= dim bits <= 16,000 (KNNEngine max dimension).
+            uint32_t pc = 0;
             for (uint64_t w = 0; w < words; ++w) {
                 uint64_t wa, wb;
                 std::memcpy(&wa, a + w * 8, sizeof(uint64_t));
@@ -160,7 +161,11 @@ namespace knn_jni {
         // layout mixes place values (1, 2, 4, 8) into a uniform count and destroys the dot
         // product.
         static inline uint64_t bothPackedNibbleDp(const uint8_t* a, const uint8_t* b, const uint64_t packedBytes) {
-            uint64_t total = 0;
+            // uint32_t: each byte contributes <= 15*15 + 15*15 = 450 (nibbles are masked to 0-15), so the sum is
+            // <= ceil(dim/2) * 450 = 3,600,000 at the 16,000 max dimension; uint32_t holds it with ~1000x headroom.
+            // Narrower than uint64_t so the auto-vectorizer accumulates in 4 x 32-bit lanes instead of promoting
+            // every partial sum to 2 x 64-bit lanes, which dominated this kernel.
+            uint32_t total = 0;
             for (uint64_t i = 0; i < packedBytes; ++i) {
                 const uint32_t aLo = a[i] & 0x0Fu;
                 const uint32_t aHi = (a[i] >> 4) & 0x0Fu;
@@ -188,7 +193,8 @@ namespace knn_jni {
                 return bothPackedNibbleDp(a, b, quantizedVectorBytes);
             }
             // docBits == 2: bit-plane popcount path.
-            uint64_t dp = 0;
+            // uint32_t: four popcounts each <= 16,000, shifted by at most 2, so dp <= 16,000 * (1+2+2+4) = 144,000.
+            uint32_t dp = 0;
             for (int32_t i = 0; i < docBits; ++i) {
                 const uint8_t* pa = a + (uint64_t) i * planeBytes;
                 for (int32_t j = 0; j < docBits; ++j) {
