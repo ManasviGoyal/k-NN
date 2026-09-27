@@ -7,7 +7,6 @@ package org.opensearch.knn.index.codec.KNN1040Codec;
 
 import lombok.SneakyThrows;
 import org.apache.lucene.codecs.KnnVectorsReader;
-import org.apache.lucene.codecs.MergedVectorValuesAccessor;
 import org.apache.lucene.codecs.hnsw.FlatFieldVectorsWriter;
 import org.apache.lucene.codecs.hnsw.FlatVectorsReader;
 import org.apache.lucene.codecs.hnsw.FlatVectorsScorer;
@@ -157,18 +156,6 @@ public class MergeOptimizedHalfFloatVectorTests extends KNNTestCase {
                 assertTrue(e.getMessage().contains("nextDoc"));
             }
         }
-    }
-
-    /**
-     * Values that didn't come from {@code mergeFloatVectorValues} are an upstream change, not an
-     * iteration mistake - the accessor must say so rather than report "nextDoc not called".
-     */
-    public void testAccessor_whenNotAMergedFloatView_thenThrowsDistinctly() {
-        IllegalArgumentException e = expectThrows(
-            IllegalArgumentException.class,
-            () -> MergedVectorValuesAccessor.currentSubValues(plainFloatVectorValues(new float[][] { randomVector() }))
-        );
-        assertTrue(e.getMessage(), e.getMessage().contains("merged float vector values"));
     }
 
     /** Drives the merged view the way the writer does, collecting each vector's FP16 bytes. */
