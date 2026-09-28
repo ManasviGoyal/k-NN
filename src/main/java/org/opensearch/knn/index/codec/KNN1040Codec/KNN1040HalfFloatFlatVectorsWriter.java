@@ -5,6 +5,7 @@
 
 package org.opensearch.knn.index.codec.KNN1040Codec;
 
+import lombok.extern.log4j.Log4j2;
 import org.apache.lucene.codecs.CodecUtil;
 import org.apache.lucene.codecs.hnsw.FlatFieldVectorsWriter;
 import org.apache.lucene.codecs.hnsw.FlatVectorsScorer;
@@ -60,6 +61,7 @@ import static org.opensearch.knn.index.codec.KNN1040Codec.KNN1040HalfFloatFlatVe
  * FP16 segment are already encoded, so {@link MergeOptimizedHalfFloatVector} passes their bytes
  * through untouched instead of decoding and re-encoding them.
  */
+@Log4j2
 public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
 
     private static final long SHALLOW_RAM_BYTES_USED = RamUsageEstimator.shallowSizeOfInstance(KNN1040HalfFloatFlatVectorsWriter.class);
@@ -167,9 +169,25 @@ public class KNN1040HalfFloatFlatVectorsWriter extends FlatVectorsWriter {
 
         final MergeOptimizedHalfFloatVector mergedValues = MergeOptimizedHalfFloatVector.create(fieldInfo, mergeState);
 
+        // BENCHMARK INSTRUMENTATION - REMOVE BEFORE MERGING
+        final long encodesBefore = KNNVectorAsCollectionOfHalfFloatsSerializer.ENCODES.sum();
+        final long decodesBefore = KNNVectorAsCollectionOfHalfFloatsSerializer.DECODES.sum();
+        final long mergeStartNanos = System.nanoTime();
+
         final long vectorDataOffset = alignOutput(vectorData);
         final DocsWithFieldSet docsWithField = writeVectorData(vectorData, mergedValues, fieldInfo.getVectorDimension());
         final long vectorDataLength = vectorData.getFilePointer() - vectorDataOffset;
+
+        // BENCHMARK INSTRUMENTATION - REMOVE BEFORE MERGING
+        log.info(
+            "HALF_FLOAT_MERGE field={} vectors={} bytes={} tookMs={} encodes={} decodes={}",
+            fieldInfo.name,
+            docsWithField.cardinality(),
+            vectorDataLength,
+            (System.nanoTime() - mergeStartNanos) / 1_000_000,
+            KNNVectorAsCollectionOfHalfFloatsSerializer.ENCODES.sum() - encodesBefore,
+            KNNVectorAsCollectionOfHalfFloatsSerializer.DECODES.sum() - decodesBefore
+        );
 
         writeMeta(fieldInfo, segmentWriteState.segmentInfo.maxDoc(), vectorDataOffset, vectorDataLength, docsWithField);
     }

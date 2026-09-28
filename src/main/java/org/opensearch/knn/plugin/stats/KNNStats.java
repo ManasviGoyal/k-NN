@@ -77,6 +77,7 @@ public class KNNStats {
     private Map<String, KNNStat<?>> buildStatsMap() {
         ImmutableMap.Builder<String, KNNStat<?>> builder = ImmutableMap.<String, KNNStat<?>>builder();
         addQueryStats(builder);
+        addHalfFloatConversionStats(builder);  // BENCHMARK INSTRUMENTATION - REMOVE BEFORE MERGING
         addNativeMemoryStats(builder);
         addEngineStats(builder);
         addScriptStats(builder);
@@ -84,6 +85,21 @@ public class KNNStats {
         addGraphStats(builder);
         addRemoteIndexBuildStats(builder);
         return builder.build();
+    }
+
+    // BENCHMARK INSTRUMENTATION - REMOVE BEFORE MERGING.
+    // Surfaces the FP16 conversion counters at _plugins/_knn/stats so a provisioned benchmark cluster
+    // can be read over HTTP instead of needing node-log access. Reads the LongAdders directly rather
+    // than going through KNNCounter, whose AtomicLong would contend on the merge hot path.
+    private void addHalfFloatConversionStats(ImmutableMap.Builder<String, KNNStat<?>> builder) {
+        builder.put(
+            "half_float_encodes",
+            createNodeStat(() -> org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer.ENCODES.sum())
+        )
+            .put(
+                "half_float_decodes",
+                createNodeStat(() -> org.opensearch.knn.index.codec.util.KNNVectorAsCollectionOfHalfFloatsSerializer.DECODES.sum())
+            );
     }
 
     private void addQueryStats(ImmutableMap.Builder<String, KNNStat<?>> builder) {

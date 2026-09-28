@@ -17,6 +17,17 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer {
 
     public static final KNNVectorAsCollectionOfHalfFloatsSerializer INSTANCE = new KNNVectorAsCollectionOfHalfFloatsSerializer();
 
+    // BENCHMARK INSTRUMENTATION - REMOVE BEFORE MERGING.
+    // LongAdder rather than AtomicLong: merges run on several threads and the counter must not
+    // distort what it measures.
+    public static final java.util.concurrent.atomic.LongAdder ENCODES = new java.util.concurrent.atomic.LongAdder();
+    public static final java.util.concurrent.atomic.LongAdder DECODES = new java.util.concurrent.atomic.LongAdder();
+
+    /** BENCHMARK INSTRUMENTATION - REMOVE BEFORE MERGING. Cumulative counts, for logging. */
+    public static String conversionCounts() {
+        return "encodes=" + ENCODES.sum() + " decodes=" + DECODES.sum();
+    }
+
     /**
      * Converts float[] to byte[] using SIMD optimization if supported, otherwise falls back to Java.
      *
@@ -25,6 +36,7 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer {
      * @param dimension number of floats to serialize
      */
     public void floatToByteArray(float[] input, byte[] output, int dimension) {
+        ENCODES.increment();  // BENCHMARK INSTRUMENTATION - REMOVE BEFORE MERGING
         if (input == null || output == null) {
             throw new IllegalArgumentException("Input/output buffers cannot be null.");
         }
@@ -104,6 +116,7 @@ public class KNNVectorAsCollectionOfHalfFloatsSerializer {
      * @param offset    byte offset into the input array where decoding should start
      */
     public void byteToFloatArray(byte[] input, float[] output, int dimension, int offset) {
+        DECODES.increment();  // BENCHMARK INSTRUMENTATION - REMOVE BEFORE MERGING
         if (input == null || output == null) {
             throw new IllegalArgumentException("Input/output buffers cannot be null.");
         }
