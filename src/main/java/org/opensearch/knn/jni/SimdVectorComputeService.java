@@ -73,6 +73,39 @@ public class SimdVectorComputeService {
     public native static void saveSearchContext(float[] query, long[] addressAndSize, int nativeFunctionTypeOrd);
 
     /**
+     * Same as {@link #saveSearchContext}, but names the target by its ordinal in the mapped region
+     * rather than passing a decoded query. The FP16 bytes are widened to FP32 natively, so no query
+     * array is decoded in Java or copied across JNI.
+     *
+     * <p>Intended for HNSW graph build, which switches target once per graph node and where that
+     * per-node decode and copy dominates. Requires an FP16 function type and a vector that is
+     * actually present in {@code addressAndSize}'s chunks.
+     *
+     * @param internalVectorId       Ordinal of the stored vector to score against.
+     * @param addressAndSize         Vector chunks, as described on {@link #saveSearchContext}.
+     * @param dimension              Vector dimension.
+     * @param nativeFunctionTypeOrd  Similarity function type index; must be one of the FP16 types.
+     */
+    public native static void saveSearchContextFromOrdinal(
+        int internalVectorId,
+        long[] addressAndSize,
+        int dimension,
+        int nativeFunctionTypeOrd
+    );
+
+    /**
+     * Same as {@link #saveSearchContextFromOrdinal}, for callers with no mapped region to read from.
+     * The target's FP16 bytes are handed over directly and widened natively, so only two bytes per
+     * dimension cross the boundary instead of a decoded float, and the conversion runs on the SIMD
+     * path rather than in Java.
+     *
+     * @param fp16Target             The target vector's FP16 bytes, {@code 2 * dimension} of them.
+     * @param dimension              Vector dimension.
+     * @param nativeFunctionTypeOrd  Similarity function type index; must be one of the FP16 types.
+     */
+    public native static void saveSearchContextFromFp16Bytes(byte[] fp16Target, int dimension, int nativeFunctionTypeOrd);
+
+    /**
      * Perform similarity search on a single vector.
      *
      * @param internalVectorId Vector id

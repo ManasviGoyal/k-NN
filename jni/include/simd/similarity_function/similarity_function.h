@@ -90,6 +90,24 @@ namespace knn_jni::simd::similarity_function {
                    int32_t numAddressAndSize,
                    int32_t nativeFunctionTypeOrd);
 
+        // Same as saveSearchContext, but takes the target as an ordinal of a vector already present
+        // in the mapped region instead of a decoded query. The FP16 bytes are widened in place here,
+        // so no decoded query crosses the JNI boundary. FP16 function types only.
+        static SimdVectorSearchContext* saveSearchContextFromOrdinal(
+                   int32_t internalVectorId,
+                   int32_t dimension,
+                   int64_t* mmapAddressAndSize,
+                   int32_t numAddressAndSize,
+                   int32_t nativeFunctionTypeOrd);
+
+        // Same as saveSearchContextFromOrdinal, for callers with no mapped region: the target's FP16
+        // bytes are passed in directly and widened here, so only two bytes per dimension cross the
+        // boundary instead of a decoded float. FP16 function types only.
+        static SimdVectorSearchContext* saveSearchContextFromFp16Bytes(
+                   const uint8_t* fp16Target,
+                   int32_t dimension,
+                   int32_t nativeFunctionTypeOrd);
+
         // Return thread static storage it's holding.
         static SimdVectorSearchContext* getSearchContext();
 

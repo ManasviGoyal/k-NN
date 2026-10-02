@@ -148,13 +148,17 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
 
                 @Override
                 public void setScoringOrdinal(int node) throws IOException {
-                    float[] target = vectorValues.vectorValue(node);
                     if (delegate == null) {
-                        delegate = new NativeHalfFloatRandomVectorScorer(vectorValues, target, nativeType, addressAndSize);
+                        delegate = new NativeHalfFloatRandomVectorScorer(
+                            vectorValues,
+                            vectorValues.vectorValue(node),
+                            nativeType,
+                            addressAndSize
+                        );
                         prefetchableDelegate = new PrefetchableRandomVectorScorer(delegate);
                     } else {
                         // Reuse the existing scorer/buffer instead of allocating a fresh one for every graph node
-                        delegate.setTarget(target);
+                        delegate.setTargetOrdinal(node);
                     }
                 }
 
@@ -207,6 +211,9 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
         private final long[] addressAndSize;
         private final boolean usesMmapAddress;
         private byte[] vectorBytesBuffer;
+        // Holds the current target's FP16 bytes on the non-mmap path; allocated on first use
+        // since the mmap path never needs it.
+        private byte[] targetBytesBuffer;
         private final float[] singleScoreBuffer = new float[1];
         private final int[] singleVectorId = new int[] { 0 };
         private int[] identityIds = new int[0];
@@ -237,6 +244,32 @@ public class KNN1040HalfFloatVectorScorer implements FlatVectorsScorer {
                 usesMmapAddress ? addressAndSize : new long[0],
                 nativeFunctionType.ordinal()
             );
+        }
+
+        /**
+         * Repoints at the stored vector {@code node} without decoding it anywhere: native widens its
+         * FP16 bytes straight out of the mapped region. Used by HNSW graph build, which switches
+         * target once per graph node, so the decode and the query-sized copy {@link #setTarget} pays
+         * would otherwise land on every node. The heap-buffer path has no mapped region to read from,
+         * so it still decodes.
+         */
+        void setTargetOrdinal(int node) throws IOException {
+            if (usesMmapAddress) {
+                SimdVectorComputeService.saveSearchContextFromOrdinal(
+                    node,
+                    addressAndSize,
+                    values.dimension(),
+                    nativeFunctionType.ordinal()
+                );
+                return;
+            }
+            // No mapped region to read from, so the bytes still have to be handed over - but as FP16,
+            // which is half the size of the decoded float[] and leaves the widening to native SIMD.
+            if (targetBytesBuffer == null) {
+                targetBytesBuffer = new byte[values.byteSize()];
+            }
+            values.readRawVectorBytes(node, targetBytesBuffer, 0);
+            SimdVectorComputeService.saveSearchContextFromFp16Bytes(targetBytesBuffer, values.dimension(), nativeFunctionType.ordinal());
         }
 
         @Override

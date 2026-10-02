@@ -100,27 +100,8 @@ jboolean encodeFp32ToFp16(knn_jni::JNIUtilInterface *jniUtil, JNIEnv* env,
     return JNI_TRUE;
 }
 
-jboolean decodeFp16ToFp32(knn_jni::JNIUtilInterface *jniUtil, JNIEnv* env,
-                           jbyteArray fp16Array, jint offset, jfloatArray fp32Array, jint count) {
-    if (count <= 0) return JNI_TRUE;
-
-    jbyte* src_bytes = reinterpret_cast<jbyte*>(jniUtil->GetPrimitiveArrayCritical(env, fp16Array, nullptr));
-    knn_jni::JNIReleaseElements release_src{[=]() {
-        jniUtil->ReleasePrimitiveArrayCritical(env, fp16Array, src_bytes, JNI_ABORT);
-    }};
-
-    jfloat* dst_f32 = reinterpret_cast<jfloat*>(jniUtil->GetPrimitiveArrayCritical(env, fp32Array, nullptr));
-    knn_jni::JNIReleaseElements release_dst{[=]() {
-        jniUtil->ReleasePrimitiveArrayCritical(env, fp32Array, dst_f32, 0);
-    }};
-
-    jbyte* src_bytes_off = src_bytes + offset;
-    if ((reinterpret_cast<uintptr_t>(src_bytes_off) % alignof(uint16_t)) != 0) {
-        return JNI_FALSE;
-    }
-
-    const uint16_t* src = reinterpret_cast<const uint16_t*>(src_bytes_off);
-    float* dst = reinterpret_cast<float*>(dst_f32);
+void decodeFp16ToFp32Raw(const uint16_t* src, float* dst, size_t count) {
+    if (count == 0) return;
 
     size_t i = 0;
 
@@ -176,7 +157,30 @@ jboolean decodeFp16ToFp32(knn_jni::JNIUtilInterface *jniUtil, JNIEnv* env,
         // Scalar fallback: convert single __fp16 lane to float32.
         dst[i] = static_cast<float>(reinterpret_cast<const __fp16*>(src)[i]);
     }
+}
 
+jboolean decodeFp16ToFp32(knn_jni::JNIUtilInterface *jniUtil, JNIEnv* env,
+                           jbyteArray fp16Array, jint offset, jfloatArray fp32Array, jint count) {
+    if (count <= 0) return JNI_TRUE;
+
+    jbyte* src_bytes = reinterpret_cast<jbyte*>(jniUtil->GetPrimitiveArrayCritical(env, fp16Array, nullptr));
+    knn_jni::JNIReleaseElements release_src{[=]() {
+        jniUtil->ReleasePrimitiveArrayCritical(env, fp16Array, src_bytes, JNI_ABORT);
+    }};
+
+    jfloat* dst_f32 = reinterpret_cast<jfloat*>(jniUtil->GetPrimitiveArrayCritical(env, fp32Array, nullptr));
+    knn_jni::JNIReleaseElements release_dst{[=]() {
+        jniUtil->ReleasePrimitiveArrayCritical(env, fp32Array, dst_f32, 0);
+    }};
+
+    jbyte* src_bytes_off = src_bytes + offset;
+    if ((reinterpret_cast<uintptr_t>(src_bytes_off) % alignof(uint16_t)) != 0) {
+        return JNI_FALSE;
+    }
+
+    decodeFp16ToFp32Raw(reinterpret_cast<const uint16_t*>(src_bytes_off),
+                        reinterpret_cast<float*>(dst_f32),
+                        static_cast<size_t>(count));
     return JNI_TRUE;
 }
 

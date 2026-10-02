@@ -13,6 +13,7 @@
 #include "platform_defs.h"
 #include "simd/similarity_function/similarity_function.h"
 #include "faiss/impl/ScalarQuantizer.h"
+#include "simd/fp16_codec/fp16_codec.h"
 #include "jni_util.h"
 
 using knn_jni::simd::similarity_function::SimdVectorSearchContext;
@@ -214,8 +215,12 @@ SimdVectorSearchContext* SimilarityFunction::saveSearchContext(
         THREAD_LOCAL_SIMD_VEC_SRCH_CTX.queryVectorByteSize = queryByteSize;
     }
 
-    // Copy query bytes
-    std::memcpy(THREAD_LOCAL_SIMD_VEC_SRCH_CTX.queryVectorSimdAligned, queryPtr, queryByteSize);
+    // Copy query bytes. A null queryPtr means the caller fills the buffer itself after this returns
+    // (see saveSearchContextFromOrdinal); set_query() below only records the buffer's address, so
+    // filling it later is equivalent.
+    if (queryPtr != nullptr) {
+        std::memcpy(THREAD_LOCAL_SIMD_VEC_SRCH_CTX.queryVectorSimdAligned, queryPtr, queryByteSize);
+    }
 
     // FP16 and BF16 share the same setup: they are 2-byte-per-component quantized
     // formats whose per-vector similarity is offloaded to a Faiss SQDistanceComputer.
@@ -229,12 +234,24 @@ SimdVectorSearchContext* SimilarityFunction::saveSearchContext(
         // FP16/BF16 vector bytes = 2bytes * dimension
         THREAD_LOCAL_SIMD_VEC_SRCH_CTX.oneVectorByteSize = 2 * dimension;
 
-        // Reset Faiss function for single vector similarity calculation
-        THREAD_LOCAL_SIMD_VEC_SRCH_CTX.faissFunction.reset(
-            faiss::ScalarQuantizer {static_cast<size_t>(dimension), quantizerType}
-                                   .get_distance_computer(metric));
+        // The distance computer depends only on (dimension, quantizer type, metric), and those are
+        // fixed for a field, so rebuild it only when this thread last served a different one. Search
+        // saves the context once per query and would not care, but HNSW graph build re-saves it once
+        // per graph node - rebuilding there costs a heap allocation plus a free per node, which at
+        // millions of nodes dominates the merge. Only the query below actually changes per call.
+        // `dimension` and `nativeFunctionTypeOrd` on the context are still the previous call's values
+        // here; they are assigned after this lambda returns.
+        const bool reusable = THREAD_LOCAL_SIMD_VEC_SRCH_CTX.faissFunction != nullptr
+            && THREAD_LOCAL_SIMD_VEC_SRCH_CTX.dimension == dimension
+            && THREAD_LOCAL_SIMD_VEC_SRCH_CTX.nativeFunctionTypeOrd == static_cast<int32_t>(functionType);
+        if (reusable == false) {
+            THREAD_LOCAL_SIMD_VEC_SRCH_CTX.faissFunction.reset(
+                faiss::ScalarQuantizer {static_cast<size_t>(dimension), quantizerType}
+                                       .get_distance_computer(metric));
+        }
 
-        // Assign query to Faiss function
+        // Always re-assign: the query contents change on every call, and queryVectorSimdAligned
+        // itself moves whenever it is grown for a larger dimension.
         THREAD_LOCAL_SIMD_VEC_SRCH_CTX.faissFunction->set_query(
             reinterpret_cast<float*>(THREAD_LOCAL_SIMD_VEC_SRCH_CTX.queryVectorSimdAligned));
     };
@@ -311,6 +328,78 @@ SimdVectorSearchContext* SimilarityFunction::saveSearchContext(
     }
 
     // Return thread_local object
+    return &THREAD_LOCAL_SIMD_VEC_SRCH_CTX;
+}
+
+namespace {
+
+using knn_jni::simd::similarity_function::NativeSimilarityFunctionType;
+
+// Only FP16 widens two bytes to a float this way; BF16 and SQ store different layouts and have to go
+// through the float[] entry point.
+void requireFp16FunctionType(const int32_t nativeFunctionTypeOrd, const char* caller) {
+    if (nativeFunctionTypeOrd != static_cast<int32_t>(NativeSimilarityFunctionType::FP16_MAXIMUM_INNER_PRODUCT)
+        && nativeFunctionTypeOrd != static_cast<int32_t>(NativeSimilarityFunctionType::FP16_L2)
+        && nativeFunctionTypeOrd != static_cast<int32_t>(NativeSimilarityFunctionType::FP16_COSINE)) {
+        throw std::runtime_error(
+            std::string(caller) + " supports FP16 only, nativeFunctionTypeOrd="
+            + std::to_string(nativeFunctionTypeOrd));
+    }
+}
+
+}  // namespace
+
+SimdVectorSearchContext* SimilarityFunction::saveSearchContextFromOrdinal(
+           const int32_t internalVectorId,
+           const int32_t dimension,
+           int64_t* mmapAddressAndSize,
+           const int32_t numAddressAndSize,
+           const int32_t nativeFunctionTypeOrd) {
+    requireFp16FunctionType(nativeFunctionTypeOrd, "saveSearchContextFromOrdinal");
+
+    // Configure everything but the query contents. This also leaves mmapPages and the prefix sum
+    // table built, which getVectorPointer() below needs in order to locate the target.
+    saveSearchContext(nullptr,
+                      dimension * static_cast<int32_t>(sizeof(float)),
+                      dimension,
+                      mmapAddressAndSize,
+                      numAddressAndSize,
+                      nativeFunctionTypeOrd);
+
+    // The target is itself a stored vector, so widen its FP16 bytes straight out of the mapped
+    // region. HNSW graph build switches target once per graph node; having Java decode to a float[]
+    // and ship that across JNI instead costs a decode plus a full query-sized copy every time.
+    const uint8_t* vectorPtr = THREAD_LOCAL_SIMD_VEC_SRCH_CTX.getVectorPointer(internalVectorId);
+    knn_jni::simd::fp16_codec::decodeFp16ToFp32Raw(
+        reinterpret_cast<const uint16_t*>(vectorPtr),
+        reinterpret_cast<float*>(THREAD_LOCAL_SIMD_VEC_SRCH_CTX.queryVectorSimdAligned),
+        static_cast<size_t>(dimension));
+
+    return &THREAD_LOCAL_SIMD_VEC_SRCH_CTX;
+}
+
+SimdVectorSearchContext* SimilarityFunction::saveSearchContextFromFp16Bytes(
+           const uint8_t* fp16Target,
+           const int32_t dimension,
+           const int32_t nativeFunctionTypeOrd) {
+    requireFp16FunctionType(nativeFunctionTypeOrd, "saveSearchContextFromFp16Bytes");
+
+    // No mapped region here, matching what the heap-buffer scoring path passes; the vector chunk is
+    // repointed separately by updateVectorChunk when the candidates are scored.
+    saveSearchContext(nullptr,
+                      dimension * static_cast<int32_t>(sizeof(float)),
+                      dimension,
+                      nullptr,
+                      0,
+                      nativeFunctionTypeOrd);
+
+    // Widen the caller's FP16 bytes rather than having Java decode them: half the bytes cross the
+    // boundary and the conversion runs on the SIMD path instead of in Java.
+    knn_jni::simd::fp16_codec::decodeFp16ToFp32Raw(
+        reinterpret_cast<const uint16_t*>(fp16Target),
+        reinterpret_cast<float*>(THREAD_LOCAL_SIMD_VEC_SRCH_CTX.queryVectorSimdAligned),
+        static_cast<size_t>(dimension));
+
     return &THREAD_LOCAL_SIMD_VEC_SRCH_CTX;
 }
 

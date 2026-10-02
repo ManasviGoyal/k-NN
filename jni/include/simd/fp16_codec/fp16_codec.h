@@ -12,6 +12,9 @@
 #ifndef OPENSEARCH_KNN_SIMD_FP16_CODEC_H
 #define OPENSEARCH_KNN_SIMD_FP16_CODEC_H
 
+#include <cstddef>
+#include <cstdint>
+
 #include <jni.h>
 #include "jni_util.h"
 
@@ -47,6 +50,21 @@ namespace knn_jni::simd::fp16_codec {
      */
     jboolean decodeFp16ToFp32(knn_jni::JNIUtilInterface *jniUtil, JNIEnv* env,
                                jbyteArray fp16Array, jint offset, jfloatArray fp32Array, jint count);
+
+    /**
+     * Widens `count` FP16 values at `src` into `count` FP32 values at `dst`.
+     *
+     * Pointer-level counterpart of decodeFp16ToFp32, kept free of JNI types so that callers already
+     * holding native memory - a mapped vector region, the SIMD search context's query buffer - get
+     * the same ISA-tuned conversion without having to materialise Java arrays to pass through.
+     * Unlike the JNI entry points, this is implemented on every build, including the one without
+     * SIMD support.
+     *
+     * @param src   FP16 values, 2 bytes per element; must be 2-byte aligned.
+     * @param dst   Destination for the widened FP32 values.
+     * @param count Number of elements to convert.
+     */
+    void decodeFp16ToFp32Raw(const uint16_t* src, float* dst, size_t count);
 
 }
 

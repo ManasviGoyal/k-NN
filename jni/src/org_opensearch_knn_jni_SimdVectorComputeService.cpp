@@ -99,6 +99,44 @@ JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_SimdVectorComputeService_save
     }
 }
 
+JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_SimdVectorComputeService_saveSearchContextFromFp16Bytes
+  (JNIEnv *env, jclass clazz, jbyteArray fp16Target, const jint dimension, const jint nativeFunctionTypeOrd) {
+    try {
+      jbyte* targetPtr = static_cast<jbyte*>(JNI_UTIL.GetPrimitiveArrayCritical(env, fp16Target, nullptr));
+      knn_jni::JNIReleaseElements releaseTarget {[=]{
+        JNI_UTIL.ReleasePrimitiveArrayCritical(env, fp16Target, targetPtr, JNI_ABORT);
+      }};
+
+      SimilarityFunction::saveSearchContextFromFp16Bytes(
+          reinterpret_cast<const uint8_t*>(targetPtr), dimension, nativeFunctionTypeOrd);
+    } catch (...) {
+      JNI_UTIL.CatchCppExceptionAndThrowJava(env);
+    }
+}
+
+JNIEXPORT void JNICALL Java_org_opensearch_knn_jni_SimdVectorComputeService_saveSearchContextFromOrdinal
+  (JNIEnv *env, jclass clazz, const jint internalVectorId, jlongArray addressAndSize,
+   const jint dimension, const jint nativeFunctionTypeOrd) {
+    try {
+      // Only the chunk table crosses the boundary here - the target vector itself is already in the
+      // mapped region, so it never gets decoded in Java or copied across JNI.
+      const jsize mmapAddressAndSizeLength = JNI_UTIL.GetJavaLongArrayLength(env, addressAndSize);
+      jlong* mmapAddressAndSize = static_cast<jlong*>(JNI_UTIL.GetPrimitiveArrayCritical(env, addressAndSize, nullptr));
+      knn_jni::JNIReleaseElements releaseAddressAndSize {[=]{
+        JNI_UTIL.ReleasePrimitiveArrayCritical(env, addressAndSize, mmapAddressAndSize, JNI_ABORT);
+      }};
+
+      SimilarityFunction::saveSearchContextFromOrdinal(
+          internalVectorId,
+          dimension,
+          (int64_t*) mmapAddressAndSize,
+          mmapAddressAndSizeLength,
+          nativeFunctionTypeOrd);
+    } catch (...) {
+      JNI_UTIL.CatchCppExceptionAndThrowJava(env);
+    }
+}
+
 JNIEXPORT jfloat JNICALL Java_org_opensearch_knn_jni_SimdVectorComputeService_scoreSimilarity
   (JNIEnv *env, jclass clazz, const jint internalVectorId) {
 
