@@ -22,6 +22,207 @@
 //
 // FP16
 //
+// Kernels scoring FP16 vectors against an FP32 query. FP16 is widened to FP32 on load and the
+// arithmetic stays in FP32.
+//
+// Every kernel keeps several independent accumulators and feeds each one a single FMA per iteration.
+// Chaining FMAs into one accumulator makes each wait on the previous one's result, so the loop runs
+// at FMA latency rather than at the rate the core can issue them; with independent accumulators the
+// FMAs overlap. The accumulators are only combined once, after the loop.
+//
+
+namespace {
+
+// Widens the low / high four FP16 lanes of `h` to FP32.
+FORCE_INLINE float32x4_t fp16LowToF32(const float16x8_t h) {
+    return vcvt_f32_f16(vget_low_f16(h));
+}
+
+FORCE_INLINE float32x4_t fp16HighToF32(const float16x8_t h) {
+    return vcvt_high_f32_f16(h);
+}
+
+// Inner product of one FP16 vector with the query.
+FORCE_INLINE float fp16InnerProduct(const float* query, const uint8_t* vector, const int32_t dim) {
+    const auto* v = reinterpret_cast<const __fp16*>(vector);
+    float32x4_t acc0 = vdupq_n_f32(0.0f);
+    float32x4_t acc1 = vdupq_n_f32(0.0f);
+    float32x4_t acc2 = vdupq_n_f32(0.0f);
+    float32x4_t acc3 = vdupq_n_f32(0.0f);
+
+    int32_t i = 0;
+    for (; i + 16 <= dim; i += 16) {
+        const float16x8_t h0 = vld1q_f16(v + i);
+        const float16x8_t h1 = vld1q_f16(v + i + 8);
+        acc0 = vfmaq_f32(acc0, vld1q_f32(query + i), fp16LowToF32(h0));
+        acc1 = vfmaq_f32(acc1, vld1q_f32(query + i + 4), fp16HighToF32(h0));
+        acc2 = vfmaq_f32(acc2, vld1q_f32(query + i + 8), fp16LowToF32(h1));
+        acc3 = vfmaq_f32(acc3, vld1q_f32(query + i + 12), fp16HighToF32(h1));
+    }
+    if (i + 8 <= dim) {
+        const float16x8_t h0 = vld1q_f16(v + i);
+        acc0 = vfmaq_f32(acc0, vld1q_f32(query + i), fp16LowToF32(h0));
+        acc1 = vfmaq_f32(acc1, vld1q_f32(query + i + 4), fp16HighToF32(h0));
+        i += 8;
+    }
+
+    float sum = vaddvq_f32(vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3)));
+    // Scalar tail for dimensions not divisible by 8.
+    for (; i < dim; ++i) {
+        sum += query[i] * static_cast<float>(v[i]);
+    }
+    return sum;
+}
+
+// Squared L2 distance between one FP16 vector and the query.
+FORCE_INLINE float fp16L2(const float* query, const uint8_t* vector, const int32_t dim) {
+    const auto* v = reinterpret_cast<const __fp16*>(vector);
+    float32x4_t acc0 = vdupq_n_f32(0.0f);
+    float32x4_t acc1 = vdupq_n_f32(0.0f);
+    float32x4_t acc2 = vdupq_n_f32(0.0f);
+    float32x4_t acc3 = vdupq_n_f32(0.0f);
+
+    int32_t i = 0;
+    for (; i + 16 <= dim; i += 16) {
+        const float16x8_t h0 = vld1q_f16(v + i);
+        const float16x8_t h1 = vld1q_f16(v + i + 8);
+        const float32x4_t diff0 = vsubq_f32(vld1q_f32(query + i), fp16LowToF32(h0));
+        const float32x4_t diff1 = vsubq_f32(vld1q_f32(query + i + 4), fp16HighToF32(h0));
+        const float32x4_t diff2 = vsubq_f32(vld1q_f32(query + i + 8), fp16LowToF32(h1));
+        const float32x4_t diff3 = vsubq_f32(vld1q_f32(query + i + 12), fp16HighToF32(h1));
+        acc0 = vfmaq_f32(acc0, diff0, diff0);
+        acc1 = vfmaq_f32(acc1, diff1, diff1);
+        acc2 = vfmaq_f32(acc2, diff2, diff2);
+        acc3 = vfmaq_f32(acc3, diff3, diff3);
+    }
+    if (i + 8 <= dim) {
+        const float16x8_t h0 = vld1q_f16(v + i);
+        const float32x4_t diff0 = vsubq_f32(vld1q_f32(query + i), fp16LowToF32(h0));
+        const float32x4_t diff1 = vsubq_f32(vld1q_f32(query + i + 4), fp16HighToF32(h0));
+        acc0 = vfmaq_f32(acc0, diff0, diff0);
+        acc1 = vfmaq_f32(acc1, diff1, diff1);
+        i += 8;
+    }
+
+    float sum = vaddvq_f32(vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3)));
+    // Scalar tail for dimensions not divisible by 8.
+    for (; i < dim; ++i) {
+        const float diff = query[i] - static_cast<float>(v[i]);
+        sum += diff * diff;
+    }
+    return sum;
+}
+
+// Inner products of four FP16 vectors with the query, sharing each query load across the four.
+// Two accumulators per vector: one for the low half of every 8 elements, one for the high half.
+FORCE_INLINE void fp16InnerProductBatch4(const float* query, const uint8_t* const vectors[4], float* scores, const int32_t dim) {
+    float32x4_t lo0 = vdupq_n_f32(0.0f), hi0 = vdupq_n_f32(0.0f);
+    float32x4_t lo1 = vdupq_n_f32(0.0f), hi1 = vdupq_n_f32(0.0f);
+    float32x4_t lo2 = vdupq_n_f32(0.0f), hi2 = vdupq_n_f32(0.0f);
+    float32x4_t lo3 = vdupq_n_f32(0.0f), hi3 = vdupq_n_f32(0.0f);
+
+    int32_t i = 0;
+    for (; i + 8 <= dim; i += 8) {
+        const float32x4_t q0 = vld1q_f32(query + i);
+        const float32x4_t q1 = vld1q_f32(query + i + 4);
+        const float16x8_t h0 = vld1q_f16(reinterpret_cast<const __fp16*>(vectors[0] + i * 2));
+        const float16x8_t h1 = vld1q_f16(reinterpret_cast<const __fp16*>(vectors[1] + i * 2));
+        const float16x8_t h2 = vld1q_f16(reinterpret_cast<const __fp16*>(vectors[2] + i * 2));
+        const float16x8_t h3 = vld1q_f16(reinterpret_cast<const __fp16*>(vectors[3] + i * 2));
+
+        // Post-load prefetch: next 8 elements
+        if (i + 8 < dim) {
+            __builtin_prefetch(query + i + 8);
+            __builtin_prefetch(vectors[0] + (i + 8) * 2);
+            __builtin_prefetch(vectors[1] + (i + 8) * 2);
+            __builtin_prefetch(vectors[2] + (i + 8) * 2);
+            __builtin_prefetch(vectors[3] + (i + 8) * 2);
+        }
+
+        lo0 = vfmaq_f32(lo0, q0, fp16LowToF32(h0));
+        hi0 = vfmaq_f32(hi0, q1, fp16HighToF32(h0));
+        lo1 = vfmaq_f32(lo1, q0, fp16LowToF32(h1));
+        hi1 = vfmaq_f32(hi1, q1, fp16HighToF32(h1));
+        lo2 = vfmaq_f32(lo2, q0, fp16LowToF32(h2));
+        hi2 = vfmaq_f32(hi2, q1, fp16HighToF32(h2));
+        lo3 = vfmaq_f32(lo3, q0, fp16LowToF32(h3));
+        hi3 = vfmaq_f32(hi3, q1, fp16HighToF32(h3));
+    }
+
+    scores[0] = vaddvq_f32(vaddq_f32(lo0, hi0));
+    scores[1] = vaddvq_f32(vaddq_f32(lo1, hi1));
+    scores[2] = vaddvq_f32(vaddq_f32(lo2, hi2));
+    scores[3] = vaddvq_f32(vaddq_f32(lo3, hi3));
+
+    // Scalar tail for dimensions not divisible by 8.
+    for (; i < dim; ++i) {
+        const float q = query[i];
+        scores[0] += q * static_cast<float>(*reinterpret_cast<const __fp16*>(vectors[0] + i * 2));
+        scores[1] += q * static_cast<float>(*reinterpret_cast<const __fp16*>(vectors[1] + i * 2));
+        scores[2] += q * static_cast<float>(*reinterpret_cast<const __fp16*>(vectors[2] + i * 2));
+        scores[3] += q * static_cast<float>(*reinterpret_cast<const __fp16*>(vectors[3] + i * 2));
+    }
+}
+
+// Squared L2 distances between four FP16 vectors and the query; same shape as the inner product above.
+FORCE_INLINE void fp16L2Batch4(const float* query, const uint8_t* const vectors[4], float* scores, const int32_t dim) {
+    float32x4_t lo0 = vdupq_n_f32(0.0f), hi0 = vdupq_n_f32(0.0f);
+    float32x4_t lo1 = vdupq_n_f32(0.0f), hi1 = vdupq_n_f32(0.0f);
+    float32x4_t lo2 = vdupq_n_f32(0.0f), hi2 = vdupq_n_f32(0.0f);
+    float32x4_t lo3 = vdupq_n_f32(0.0f), hi3 = vdupq_n_f32(0.0f);
+
+    int32_t i = 0;
+    for (; i + 8 <= dim; i += 8) {
+        const float32x4_t q0 = vld1q_f32(query + i);
+        const float32x4_t q1 = vld1q_f32(query + i + 4);
+        const float16x8_t h0 = vld1q_f16(reinterpret_cast<const __fp16*>(vectors[0] + i * 2));
+        const float16x8_t h1 = vld1q_f16(reinterpret_cast<const __fp16*>(vectors[1] + i * 2));
+        const float16x8_t h2 = vld1q_f16(reinterpret_cast<const __fp16*>(vectors[2] + i * 2));
+        const float16x8_t h3 = vld1q_f16(reinterpret_cast<const __fp16*>(vectors[3] + i * 2));
+
+        if (i + 32 < dim) {
+            __builtin_prefetch(query + i + 32);
+            __builtin_prefetch(vectors[0] + (i + 32) * 2);
+            __builtin_prefetch(vectors[1] + (i + 32) * 2);
+            __builtin_prefetch(vectors[2] + (i + 32) * 2);
+            __builtin_prefetch(vectors[3] + (i + 32) * 2);
+        }
+
+        const float32x4_t d0lo = vsubq_f32(q0, fp16LowToF32(h0)), d0hi = vsubq_f32(q1, fp16HighToF32(h0));
+        const float32x4_t d1lo = vsubq_f32(q0, fp16LowToF32(h1)), d1hi = vsubq_f32(q1, fp16HighToF32(h1));
+        const float32x4_t d2lo = vsubq_f32(q0, fp16LowToF32(h2)), d2hi = vsubq_f32(q1, fp16HighToF32(h2));
+        const float32x4_t d3lo = vsubq_f32(q0, fp16LowToF32(h3)), d3hi = vsubq_f32(q1, fp16HighToF32(h3));
+
+        lo0 = vfmaq_f32(lo0, d0lo, d0lo);
+        hi0 = vfmaq_f32(hi0, d0hi, d0hi);
+        lo1 = vfmaq_f32(lo1, d1lo, d1lo);
+        hi1 = vfmaq_f32(hi1, d1hi, d1hi);
+        lo2 = vfmaq_f32(lo2, d2lo, d2lo);
+        hi2 = vfmaq_f32(hi2, d2hi, d2hi);
+        lo3 = vfmaq_f32(lo3, d3lo, d3lo);
+        hi3 = vfmaq_f32(hi3, d3hi, d3hi);
+    }
+
+    scores[0] = vaddvq_f32(vaddq_f32(lo0, hi0));
+    scores[1] = vaddvq_f32(vaddq_f32(lo1, hi1));
+    scores[2] = vaddvq_f32(vaddq_f32(lo2, hi2));
+    scores[3] = vaddvq_f32(vaddq_f32(lo3, hi3));
+
+    // Scalar tail for dimensions not divisible by 8.
+    for (; i < dim; ++i) {
+        const float q = query[i];
+        const float d0 = q - static_cast<float>(*reinterpret_cast<const __fp16*>(vectors[0] + i * 2));
+        const float d1 = q - static_cast<float>(*reinterpret_cast<const __fp16*>(vectors[1] + i * 2));
+        const float d2 = q - static_cast<float>(*reinterpret_cast<const __fp16*>(vectors[2] + i * 2));
+        const float d3 = q - static_cast<float>(*reinterpret_cast<const __fp16*>(vectors[3] + i * 2));
+        scores[0] += d0 * d0;
+        scores[1] += d1 * d1;
+        scores[2] += d2 * d2;
+        scores[3] += d3 * d3;
+    }
+}
+
+}  // namespace
 
 template <BulkScoreTransform BulkScoreTransformFunc, ScoreTransform ScoreTransformFunc>
 struct ArmNeonFP16MaxIP final : BaseSimilarityFunction<BulkScoreTransformFunc, ScoreTransformFunc> {
@@ -29,114 +230,35 @@ struct ArmNeonFP16MaxIP final : BaseSimilarityFunction<BulkScoreTransformFunc, S
                                    int32_t* internalVectorIds,
                                    float* scores,
                                    const int32_t numVectors) {
-        // Bulk inner product with 4 batch
-        int32_t processedCount = 0;
         constexpr int32_t vecBlock = 4;
         const uint8_t* vectors[vecBlock];
         const auto* queryPtr = (const float*) srchContext->queryVectorSimdAligned;
         const int32_t dim = srchContext->dimension;
-        constexpr int32_t dimensionBatch = 8;
 
+        // Four vectors at a time, sharing the query loads.
+        int32_t processedCount = 0;
         for ( ; (processedCount + vecBlock) <= numVectors ; processedCount += vecBlock) {
             srchContext->getVectorPointersInBulk((uint8_t**)vectors, &internalVectorIds[processedCount], vecBlock);
-
-            // Score accumulator per each vector
-            float32x4_t acc0 = vdupq_n_f32(0.0f);
-            float32x4_t acc1 = vdupq_n_f32(0.0f);
-            float32x4_t acc2 = vdupq_n_f32(0.0f);
-            float32x4_t acc3 = vdupq_n_f32(0.0f);
-
-            // Batch inner product for 8 values
-            int32_t i = 0;
-            for (; i + dimensionBatch <= dim; i += dimensionBatch) {
-                // Load 8 FP32 query elements
-                float32x4_t q0 = vld1q_f32(queryPtr + i);
-                float32x4_t q1 = vld1q_f32(queryPtr + i + 4);
-
-                // Load 8 FP16 elements from each target and convert to FP32
-                float16x8_t h0 = vld1q_f16((const __fp16 *)(vectors[0] + i * 2));
-                float16x8_t h1 = vld1q_f16((const __fp16 *)(vectors[1] + i * 2));
-                float16x8_t h2 = vld1q_f16((const __fp16 *)(vectors[2] + i * 2));
-                float16x8_t h3 = vld1q_f16((const __fp16 *)(vectors[3] + i * 2));
-                float32x4_t d0_lo = vcvt_f32_f16(vget_low_f16(h0));
-                float32x4_t d0_hi = vcvt_f32_f16(vget_high_f16(h0));
-                float32x4_t d1_lo = vcvt_f32_f16(vget_low_f16(h1));
-                float32x4_t d1_hi = vcvt_f32_f16(vget_high_f16(h1));
-                float32x4_t d2_lo = vcvt_f32_f16(vget_low_f16(h2));
-                float32x4_t d2_hi = vcvt_f32_f16(vget_high_f16(h2));
-                float32x4_t d3_lo = vcvt_f32_f16(vget_low_f16(h3));
-                float32x4_t d3_hi = vcvt_f32_f16(vget_high_f16(h3));
-
-                // Post-load prefetch: next 8 elements
-                // By the time in the next loop,
-                if (i + dimensionBatch < dim) {
-                    __builtin_prefetch(queryPtr + i + 8);
-                    __builtin_prefetch(vectors[0] + (i + 8) * 2);
-                    __builtin_prefetch(vectors[1] + (i + 8) * 2);
-                    __builtin_prefetch(vectors[2] + (i + 8) * 2);
-                    __builtin_prefetch(vectors[3] + (i + 8) * 2);
-                }
-
-                // Accumulate FMA
-                acc0 = vfmaq_f32(acc0, q0, d0_lo);
-                acc0 = vfmaq_f32(acc0, q1, d0_hi);
-
-                acc1 = vfmaq_f32(acc1, q0, d1_lo);
-                acc1 = vfmaq_f32(acc1, q1, d1_hi);
-
-                acc2 = vfmaq_f32(acc2, q0, d2_lo);
-                acc2 = vfmaq_f32(acc2, q1, d2_hi);
-
-                acc3 = vfmaq_f32(acc3, q0, d3_lo);
-                acc3 = vfmaq_f32(acc3, q1, d3_hi);
-            }
-
-            // Horizontal sum
-            scores[processedCount] = vaddvq_f32(acc0);
-            scores[processedCount + 1] = vaddvq_f32(acc1);
-            scores[processedCount + 2] = vaddvq_f32(acc2);
-            scores[processedCount + 3] = vaddvq_f32(acc3);
-
-            // Scalar tail.
-            // For example,
-            // if dimension was 66 then this loop will take care of remaining 2 values.
-            for (; i < dim; i++) {
-                __fp16 h0 = *((const __fp16 *)(vectors[0] + i * 2));
-                __fp16 h1 = *((const __fp16 *)(vectors[1] + i * 2));
-                __fp16 h2 = *((const __fp16 *)(vectors[2] + i * 2));
-                __fp16 h3 = *((const __fp16 *)(vectors[3] + i * 2));
-                const float qv = queryPtr[i];
-                scores[processedCount] += qv * (float)h0;
-                scores[processedCount + 1] += qv * (float)h1;
-                scores[processedCount + 2] += qv * (float)h2;
-                scores[processedCount + 3] += qv * (float)h3;
-            }
+            fp16InnerProductBatch4(queryPtr, vectors, &scores[processedCount], dim);
         }
 
-        // Tail loop for remaining vectors
+        // Remaining vectors, one at a time.
         for (; processedCount < numVectors; ++processedCount) {
-            const auto* vecPtr = (const __fp16*) srchContext->getVectorPointer(internalVectorIds[processedCount]);
-            float32x4_t acc = vdupq_n_f32(0.0f);
-            int32_t i = 0;
-            for (; i <= dim - dimensionBatch; i += dimensionBatch) {
-                float32x4_t q0 = vld1q_f32(queryPtr + i);
-                float32x4_t q1 = vld1q_f32(queryPtr + i + 4);
-                float16x8_t h0 = vld1q_f16((const __fp16 *)(vecPtr + i));
-                float32x4_t d0_lo = vcvt_f32_f16(vget_low_f16(h0));
-                float32x4_t d0_hi = vcvt_f32_f16(vget_high_f16(h0));
-                acc = vfmaq_f32(acc, q0, d0_lo);
-                acc = vfmaq_f32(acc, q1, d0_hi);
-            }
-
-            float finalSum = vaddvq_f32(acc);
-            // Scalar tail for dimensions not divisible by 4
-            for (; i < dim; ++i) {
-                finalSum += queryPtr[i] * (float)vecPtr[i];
-            }
-            scores[processedCount] = finalSum;
+            scores[processedCount] = fp16InnerProduct(
+                queryPtr, srchContext->getVectorPointer(internalVectorIds[processedCount]), dim);
         }
 
         BulkScoreTransformFunc(scores, numVectors);
+    }
+
+    // Scores a single vector with the same kernel the bulk path uses, rather than the generic Faiss
+    // distance computer in BaseSimilarityFunction. HNSW graph build scores one vector at a time far
+    // more often than search does - every neighbour diversity check goes through here - so this path
+    // has to be as tight as the bulk one.
+    float calculateSimilarity(SimdVectorSearchContext* srchContext, const int32_t internalVectorId) override {
+        const auto* queryPtr = (const float*) srchContext->queryVectorSimdAligned;
+        return ScoreTransformFunc(
+            fp16InnerProduct(queryPtr, srchContext->getVectorPointer(internalVectorId), srchContext->dimension));
     }
 };
 
@@ -146,121 +268,32 @@ struct ArmNeonFP16L2 final : BaseSimilarityFunction<BulkScoreTransformFunc, Scor
                                    int32_t* internalVectorIds,
                                    float* scores,
                                    const int32_t numVectors) {
-        // Bulk L2 with 4 batch
-        int32_t processedCount = 0;
         constexpr int32_t vecBlock = 4;
         const uint8_t* vectors[vecBlock];
         const auto* queryPtr = (const float*) srchContext->queryVectorSimdAligned;
         const int32_t dim = srchContext->dimension;
-        constexpr int32_t dimensionBatch = 8;
 
+        // Four vectors at a time, sharing the query loads.
+        int32_t processedCount = 0;
         for ( ; (processedCount + vecBlock) <= numVectors ; processedCount += vecBlock) {
             srchContext->getVectorPointersInBulk((uint8_t**)vectors, &internalVectorIds[processedCount], vecBlock);
-
-            // Score accumulator per each vector
-            float32x4_t acc0 = vdupq_n_f32(0.0f);
-            float32x4_t acc1 = vdupq_n_f32(0.0f);
-            float32x4_t acc2 = vdupq_n_f32(0.0f);
-            float32x4_t acc3 = vdupq_n_f32(0.0f);
-
-            // Batch L2 for 8 values
-            int32_t i = 0;
-            for (; i + dimensionBatch <= dim; i += dimensionBatch) {
-                // Load 8 FP32 query elements
-                float32x4_t q0 = vld1q_f32(queryPtr + i);
-                float32x4_t q1 = vld1q_f32(queryPtr + i + 4);
-
-                // Load 8 FP16 elements from each target and convert to FP32
-                float16x8_t h0 = vld1q_f16((const __fp16 *)(vectors[0] + i * 2));
-                float16x8_t h1 = vld1q_f16((const __fp16 *)(vectors[1] + i * 2));
-                float16x8_t h2 = vld1q_f16((const __fp16 *)(vectors[2] + i * 2));
-                float16x8_t h3 = vld1q_f16((const __fp16 *)(vectors[3] + i * 2));
-                float32x4_t d0_lo = vcvt_f32_f16(vget_low_f16(h0));
-                float32x4_t d0_hi = vcvt_f32_f16(vget_high_f16(h0));
-                float32x4_t d1_lo = vcvt_f32_f16(vget_low_f16(h1));
-                float32x4_t d1_hi = vcvt_f32_f16(vget_high_f16(h1));
-                float32x4_t d2_lo = vcvt_f32_f16(vget_low_f16(h2));
-                float32x4_t d2_hi = vcvt_f32_f16(vget_high_f16(h2));
-                float32x4_t d3_lo = vcvt_f32_f16(vget_low_f16(h3));
-                float32x4_t d3_hi = vcvt_f32_f16(vget_high_f16(h3));
-
-                if (i + 32 < dim) {
-                    __builtin_prefetch(queryPtr + i + 32);
-                    __builtin_prefetch(vectors[0] + (i + 32) * 2);
-                    __builtin_prefetch(vectors[1] + (i + 32) * 2);
-                    __builtin_prefetch(vectors[2] + (i + 32) * 2);
-                    __builtin_prefetch(vectors[3] + (i + 32) * 2);
-                }
-
-                // L2: diff = q - d, then acc += diff * diff (one FMA per half)
-                float32x4_t diff0_lo = vsubq_f32(q0, d0_lo);
-                float32x4_t diff0_hi = vsubq_f32(q1, d0_hi);
-                acc0 = vfmaq_f32(acc0, diff0_lo, diff0_lo);
-                acc0 = vfmaq_f32(acc0, diff0_hi, diff0_hi);
-
-                float32x4_t diff1_lo = vsubq_f32(q0, d1_lo);
-                float32x4_t diff1_hi = vsubq_f32(q1, d1_hi);
-                acc1 = vfmaq_f32(acc1, diff1_lo, diff1_lo);
-                acc1 = vfmaq_f32(acc1, diff1_hi, diff1_hi);
-
-                float32x4_t diff2_lo = vsubq_f32(q0, d2_lo);
-                float32x4_t diff2_hi = vsubq_f32(q1, d2_hi);
-                acc2 = vfmaq_f32(acc2, diff2_lo, diff2_lo);
-                acc2 = vfmaq_f32(acc2, diff2_hi, diff2_hi);
-
-                float32x4_t diff3_lo = vsubq_f32(q0, d3_lo);
-                float32x4_t diff3_hi = vsubq_f32(q1, d3_hi);
-                acc3 = vfmaq_f32(acc3, diff3_lo, diff3_lo);
-                acc3 = vfmaq_f32(acc3, diff3_hi, diff3_hi);
-            }
-
-            // Horizontal sum
-            scores[processedCount] = vaddvq_f32(acc0);
-            scores[processedCount + 1] = vaddvq_f32(acc1);
-            scores[processedCount + 2] = vaddvq_f32(acc2);
-            scores[processedCount + 3] = vaddvq_f32(acc3);
-
-            // Scalar tail.
-            for (; i < dim; i++) {
-                __fp16 h0 = *((const __fp16 *)(vectors[0] + i * 2));
-                __fp16 h1 = *((const __fp16 *)(vectors[1] + i * 2));
-                __fp16 h2 = *((const __fp16 *)(vectors[2] + i * 2));
-                __fp16 h3 = *((const __fp16 *)(vectors[3] + i * 2));
-                const float qv = queryPtr[i];
-                float d0 = qv - (float)h0; scores[processedCount] += d0 * d0;
-                float d1 = qv - (float)h1; scores[processedCount + 1] += d1 * d1;
-                float d2 = qv - (float)h2; scores[processedCount + 2] += d2 * d2;
-                float d3 = qv - (float)h3; scores[processedCount + 3] += d3 * d3;
-            }
+            fp16L2Batch4(queryPtr, vectors, &scores[processedCount], dim);
         }
 
-        // Tail loop for remaining vectors
+        // Remaining vectors, one at a time.
         for (; processedCount < numVectors; ++processedCount) {
-            const auto* vecPtr = (const __fp16*) srchContext->getVectorPointer(internalVectorIds[processedCount]);
-            float32x4_t acc = vdupq_n_f32(0.0f);
-            int32_t i = 0;
-            for (; i <= dim - dimensionBatch; i += dimensionBatch) {
-                float32x4_t q0 = vld1q_f32(queryPtr + i);
-                float32x4_t q1 = vld1q_f32(queryPtr + i + 4);
-                float16x8_t h0 = vld1q_f16((const __fp16 *)(vecPtr + i));
-                float32x4_t d0_lo = vcvt_f32_f16(vget_low_f16(h0));
-                float32x4_t d0_hi = vcvt_f32_f16(vget_high_f16(h0));
-                float32x4_t diff_lo = vsubq_f32(q0, d0_lo);
-                float32x4_t diff_hi = vsubq_f32(q1, d0_hi);
-                acc = vfmaq_f32(acc, diff_lo, diff_lo);
-                acc = vfmaq_f32(acc, diff_hi, diff_hi);
-            }
-
-            float finalSum = vaddvq_f32(acc);
-            // Scalar tail for dimensions not divisible by 8
-            for (; i < dim; ++i) {
-                float d = queryPtr[i] - (float)vecPtr[i];
-                finalSum += d * d;
-            }
-            scores[processedCount] = finalSum;
+            scores[processedCount] = fp16L2(
+                queryPtr, srchContext->getVectorPointer(internalVectorIds[processedCount]), dim);
         }
 
         BulkScoreTransformFunc(scores, numVectors);
+    }
+
+    // See ArmNeonFP16MaxIP::calculateSimilarity.
+    float calculateSimilarity(SimdVectorSearchContext* srchContext, const int32_t internalVectorId) override {
+        const auto* queryPtr = (const float*) srchContext->queryVectorSimdAligned;
+        return ScoreTransformFunc(
+            fp16L2(queryPtr, srchContext->getVectorPointer(internalVectorId), srchContext->dimension));
     }
 };
 

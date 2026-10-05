@@ -430,7 +430,10 @@ enum class SQMetricMode {
 
 template <BulkScoreTransform BulkScoreTransformFunc, ScoreTransform ScoreTransformFunc>
 struct BaseSimilarityFunction : SimilarityFunction {
-    float calculateSimilarity(SimdVectorSearchContext* srchContext, const int32_t internalVectorId) final {
+    // Generic single-vector scoring through the Faiss distance computer. Not final: a SIMD variant
+    // that has its own kernel for the format overrides this so single-vector scoring does not fall
+    // back to Faiss, whose SIMD level depends on how Faiss itself happened to be compiled.
+    float calculateSimilarity(SimdVectorSearchContext* srchContext, const int32_t internalVectorId) override {
         // Prepare distance calculation
         auto vector = reinterpret_cast<uint8_t*>(srchContext->getVectorPointer(internalVectorId));
         knn_jni::util::ParameterCheck::require_non_null(vector, "vector from getVectorPointer");
